@@ -35,9 +35,20 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { Separator } from "@/components/ui/separator";
+
+import { format } from "date-fns";
+import { Calendar } from "@/components/ui/calendar";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+
 import ELK from "elkjs/lib/elk.bundled.js";
 import { FaDotCircle } from "react-icons/fa";
-import { PiBirdBold } from "react-icons/pi";
+import { PiBird, PiBirdBold } from "react-icons/pi";
+import { CalendarIcon } from "lucide-react";
+import { IoSettingsOutline } from "react-icons/io5";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
 import { pigeons as mockPigeons } from "@/data/mockData";
@@ -125,7 +136,7 @@ function PigeonPopup({ pigeon, position, onClose, onChange }) {
 
   return (
     <Card
-      className="absolute z-50 w-[320px] shadow-xl"
+      className="absolute z-5 w-[320px] shadow-xl"
       style={{
         left: position.x,
         top: position.y,
@@ -617,7 +628,7 @@ function PigeonEditor({
   );
 }
 
-function TopNav() {
+function TopNav({ onCreateBird }) {
   const pathname = usePathname();
 
   const links = [
@@ -627,9 +638,9 @@ function TopNav() {
   ];
 
   return (
-    <nav className="absolute top-4 left-0 z-100 w-full">
+    <nav className="absolute top-4 left-0 z-10 w-full">
       {/* Centered navbar */}
-      <div className="absolute left-1/2 -translate-x-1/2 rounded-lg ring-2 ring-ring border-b-4 bg-white/90 px-2 py-2 shadow-md backdrop-blur">
+      <div className="absolute left-1/2 -translate-x-1/2 rounded-lg ring-2 ring-ring border-b-4 bg-white/90 px-2 py-2 shadow-md backdrop-blur transition-all hover:scale-105">
         <div className="flex items-center gap-1">
           {links.map((link) => {
             const active = pathname === link.href;
@@ -658,30 +669,42 @@ function TopNav() {
         </div>
       </div>
 
-      {/* Button to the right of centered navbar */}
+      {/* Button to the right of navbar */}
       <Button
         type="button"
-        onClick={() => setNewPigeonOpen(true)}
-        className="absolute left-1/2 ml-36 h-[56px] w-[62px] rounded-lg border-0 border-b-4 border-dot bg-white p-0 text-primary ring-2 ring-ring shadow-md backdrop-blur hover:scale-105"
-        aria-label="Create new bird"
+        onClick={onCreateBird}
+        className="absolute left-1/2 ml-36 h-[56px] w-[62px] rounded-lg border-0 border-b-4 border-dot bg-white p-0 text-muted-foreground ring-2 ring-ring shadow-md backdrop-blur hover:scale-105 hover:text-primary"
+        aria-label="Add new bird"
       >
-        <PiBirdBold className="h-8 w-8" />
+        <PiBird className="size-6" />
+      </Button>
+
+      {/* Button to the left of navbar */}
+      <Button
+        type="button"
+        onClick={onCreateBird}
+        className="absolute right-1/2 mr-36 h-[56px] w-[62px] rounded-lg border-0 border-b-4 border-dot bg-white p-0 text-muted-foreground ring-2 ring-ring shadow-md backdrop-blur hover:scale-105 hover:text-primary"
+        aria-label="Add new bird"
+      >
+        <IoSettingsOutline className="size-6" />
       </Button>
     </nav>
   );
 }
 
 function NewPigeonDialog({ open, onOpenChange, pigeons, onCreate }) {
-  const [form, setForm] = useState({
+  const defaultForm = {
     name: "",
-    bandId: "",
     birthday: "",
-    birthdayPrecision: "unknown",
     status: "home",
-    notes: "",
+    bandId: "",
+    bandColor: "none",
     parentOneId: "",
     parentTwoId: "",
-  });
+    notes: "",
+  };
+
+  const [form, setForm] = useState(defaultForm);
 
   function updateField(field, value) {
     setForm((current) => ({
@@ -691,16 +714,7 @@ function NewPigeonDialog({ open, onOpenChange, pigeons, onCreate }) {
   }
 
   function resetForm() {
-    setForm({
-      name: "",
-      bandId: "",
-      birthday: "",
-      birthdayPrecision: "unknown",
-      status: "home",
-      notes: "",
-      parentOneId: "",
-      parentTwoId: "",
-    });
+    setForm(defaultForm);
   }
 
   function handleSubmit(event) {
@@ -713,21 +727,22 @@ function NewPigeonDialog({ open, onOpenChange, pigeons, onCreate }) {
     const nextPigeon = {
       id: crypto.randomUUID(),
       name: form.name.trim(),
-      bandId: form.bandId.trim() || null,
       birthday: form.birthday.trim() || null,
-      birthdayPrecision: form.birthday.trim()
-        ? form.birthdayPrecision
-        : "unknown",
       status: form.status,
-      notes: form.notes.trim() || "",
+      bandId: form.bandId.trim() || null,
+      bandColor: form.bandColor || "none",
       parentIds,
-      imageUrl: null,
+      notes: form.notes.trim() || "",
     };
 
     onCreate(nextPigeon);
     resetForm();
     onOpenChange(false);
   }
+
+  const parentOneOptions = pigeons.filter(
+    (pigeon) => pigeon.id !== form.parentTwoId,
+  );
 
   const parentTwoOptions = pigeons.filter(
     (pigeon) => pigeon.id !== form.parentOneId,
@@ -737,7 +752,7 @@ function NewPigeonDialog({ open, onOpenChange, pigeons, onCreate }) {
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[520px]">
         <DialogHeader>
-          <DialogTitle>Create new bird</DialogTitle>
+          <DialogTitle>Add new bird</DialogTitle>
           <DialogDescription>
             Add a pigeon to the family graph. Parents are optional.
           </DialogDescription>
@@ -757,45 +772,119 @@ function NewPigeonDialog({ open, onOpenChange, pigeons, onCreate }) {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="new-band-id">Band ID</Label>
-              <Input
-                id="new-band-id"
-                value={form.bandId}
-                onChange={(event) => updateField("bandId", event.target.value)}
-                placeholder="Unbanded"
-              />
+              <Label>Birthday</Label>
+
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="w-full justify-start text-left font-normal"
+                  >
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    {form.birthday || "Select birthday"}
+                  </Button>
+                </PopoverTrigger>
+
+                <PopoverContent className="w-auto p-0" align="start">
+                  <Calendar
+                    mode="single"
+                    selected={
+                      form.birthday
+                        ? new Date(
+                            Number(form.birthday.slice(6, 10)),
+                            Number(form.birthday.slice(0, 2)) - 1,
+                            Number(form.birthday.slice(3, 5)),
+                          )
+                        : undefined
+                    }
+                    onSelect={(date) => {
+                      updateField(
+                        "birthday",
+                        date ? format(date, "MM-dd-yyyy") : "",
+                      );
+                    }}
+                    captionLayout="dropdown"
+                  />
+                </PopoverContent>
+              </Popover>
             </div>
           </div>
 
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
-              <Label htmlFor="new-birthday">Birthday</Label>
-              <Input
-                id="new-birthday"
-                value={form.birthday}
-                onChange={(event) =>
-                  updateField("birthday", event.target.value)
+              <Label>Parent 1</Label>
+              <Select
+                value={form.parentOneId || "none"}
+                onValueChange={(value) =>
+                  updateField("parentOneId", value === "none" ? "" : value)
                 }
-                placeholder="2026-05-16, 2026-05, or 2026"
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Unknown" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Unknown</SelectItem>
+                  {parentOneOptions.map((pigeon) => (
+                    <SelectItem key={pigeon.id} value={pigeon.id}>
+                      {pigeon.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Parent 2</Label>
+              <Select
+                value={form.parentTwoId || "none"}
+                onValueChange={(value) =>
+                  updateField("parentTwoId", value === "none" ? "" : value)
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Unknown" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Unknown</SelectItem>
+                  {parentTwoOptions.map((pigeon) => (
+                    <SelectItem key={pigeon.id} value={pigeon.id}>
+                      {pigeon.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="new-band-id">Band ID</Label>
+              <Input
+                id="new-band-id"
+                value={form.bandId}
+                onChange={(event) => updateField("bandId", event.target.value)}
+                placeholder="Unknown"
               />
             </div>
 
             <div className="space-y-2">
-              <Label>Birthday precision</Label>
+              <Label>Band color</Label>
               <Select
-                value={form.birthdayPrecision}
-                onValueChange={(value) =>
-                  updateField("birthdayPrecision", value)
-                }
+                value={form.bandColor}
+                onValueChange={(value) => updateField("bandColor", value)}
               >
                 <SelectTrigger>
-                  <SelectValue placeholder="Birthday precision" />
+                  <SelectValue placeholder="Band color" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="exact">Exact date</SelectItem>
-                  <SelectItem value="month">Month</SelectItem>
-                  <SelectItem value="year">Year</SelectItem>
-                  <SelectItem value="unknown">Unknown</SelectItem>
+                  <SelectItem value="none">None</SelectItem>
+                  <SelectItem value="red">Red</SelectItem>
+                  <SelectItem value="blue">Blue</SelectItem>
+                  <SelectItem value="green">Green</SelectItem>
+                  <SelectItem value="yellow">Yellow</SelectItem>
+                  <SelectItem value="white">White</SelectItem>
+                  <SelectItem value="black">Black</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -820,59 +909,13 @@ function NewPigeonDialog({ open, onOpenChange, pigeons, onCreate }) {
 
           <Separator />
 
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-2">
-              <Label>Parent 1</Label>
-              <Select
-                value={form.parentOneId || "none"}
-                onValueChange={(value) =>
-                  updateField("parentOneId", value === "none" ? "" : value)
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Optional parent" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">Unknown</SelectItem>
-                  {pigeons.map((pigeon) => (
-                    <SelectItem key={pigeon.id} value={pigeon.id}>
-                      {pigeon.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-2">
-              <Label>Parent 2</Label>
-              <Select
-                value={form.parentTwoId || "none"}
-                onValueChange={(value) =>
-                  updateField("parentTwoId", value === "none" ? "" : value)
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Optional parent" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">Unknown</SelectItem>
-                  {parentTwoOptions.map((pigeon) => (
-                    <SelectItem key={pigeon.id} value={pigeon.id}>
-                      {pigeon.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-
           <div className="space-y-2">
             <Label htmlFor="new-notes">Notes</Label>
             <Textarea
               id="new-notes"
               value={form.notes}
               onChange={(event) => updateField("notes", event.target.value)}
-              placeholder="Medical notes, description, behavior..."
+              placeholder="Random information, medical notes, behavior..."
             />
           </div>
 
@@ -885,7 +928,7 @@ function NewPigeonDialog({ open, onOpenChange, pigeons, onCreate }) {
               Cancel
             </Button>
 
-            <Button type="submit">Create bird</Button>
+            <Button type="submit">Add bird</Button>
           </div>
         </form>
       </DialogContent>
@@ -1072,7 +1115,7 @@ function PigeonGraph() {
         <MiniMap zoomable pannable />
       </ReactFlow>
 
-      <TopNav />
+      <TopNav onCreateBird={() => setNewPigeonOpen(true)} />
 
       <NewPigeonDialog
         open={newPigeonOpen}
