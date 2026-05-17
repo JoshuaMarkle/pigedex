@@ -1,36 +1,58 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://github.com/vercel/next.js/tree/canary/packages/create-next-app).
+# Pigeon Family Tree
 
-## Getting Started
+A visualizer for the family tree of a pigeon coop.
 
-First, run the development server:
+## Features TBD
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+- Family tree
+  - Pigeon node edits
+    - Remove birthday precision (just string field not important)
+    - Able to change parents
+    - Able to add children
+      - makes new popup that asks for the other parent (could be unknown)
+      - add child button, brings up the new pigeon popup will filled in parents
+    - Link to more detailed pigeon entry
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+- Flights page
+  - map like google maps
+  - maybe just a list of flights (like actual airline type ui)
+    - each flight contains a way to select a location in the popup
+  - will display if the pigeons are home/editing will update that pigeons status
+- Catalog page
+  - card view: display the pigeons like items on some marketplace (show images)
+    - sort by...name, birthday, status, band id
+    - filter by...name, birthday, status, band id
+    - search feature
 
-You can start editing the page by modifying `app/page.js`. The page auto-updates as you edit the file.
+**Database Stuff**
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- Pigeon data structure (updated)
+  - hidden id, just for db stuff
+  - name, brithday, status (home/flying/lost)
+  - band id (?unknown), band color (default none; only used for ui rendering not imp)
+  - parent 1, parent 2 (could both be unknown)
+  - notes (just string for random information)
+  - images, pfp (something to point to the image of choice/could be number or url)
+- Flight data structure
+  - hidden id, just for db stuff
+  - date
+  - location (lat/long on real map)
+  - distance (calculated from the location back to home addr)
+  - notes (for now other stuff like flight times etc)
+- General
+  - home location
 
-## Learn More
+**UI nicities**
 
-To learn more about Next.js, take a look at the following resources:
+- Loading information
+- custom shadcn stuff
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+**Future stuff**
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+- flight times of pigeons
 
-## Deploy on Vercel
+## Problems
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- Deletions
+  - Parent is deleted, children should remove that parent from their parent slot
+- duplicate parents
