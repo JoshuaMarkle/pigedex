@@ -14,6 +14,7 @@ import {
   useReactFlow,
   ReactFlowProvider,
 } from "@xyflow/react";
+import { supabase } from "@/lib/supabaseClient";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -44,14 +45,20 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 
+import {
+  fetchPigeonsWithParents,
+  createPigeonInDb,
+  updatePigeonInDb,
+  setPigeonParentsInDb,
+} from "@/lib/pigeonDb";
+import { signInAdmin, getIsCoopAdmin, signOutAdmin } from "@/lib/auth";
+
 import ELK from "elkjs/lib/elk.bundled.js";
 import { FaDotCircle } from "react-icons/fa";
 import { PiBird, PiBirdBold } from "react-icons/pi";
 import { CalendarIcon } from "lucide-react";
-import { IoSettingsOutline } from "react-icons/io5";
+import { IoSettingsOutline, IoPersonOutline } from "react-icons/io5";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-
-import { pigeons as mockPigeons } from "@/data/mockData";
 
 const elk = new ELK();
 
@@ -131,8 +138,83 @@ function getPopupPosition({ node, reactFlow, containerRect }) {
   };
 }
 
-function PigeonPopup({ pigeon, position, onClose, onChange }) {
-  if (!pigeon || !position) return null;
+function PigeonPopup({
+  pigeon,
+  pigeons,
+  position,
+  onClose,
+  onUpdateField,
+  onUpdateParents,
+  isAdmin,
+}) {
+  const [draft, setDraft] = useState(null);
+
+  useEffect(() => {
+    if (pigeon) {
+      setDraft(pigeon);
+    }
+  }, [pigeon]);
+
+  if (!pigeon || !position || !draft) return null;
+
+  function updateDraft(field, value) {
+    setDraft((current) => ({
+      ...current,
+      [field]: value,
+    }));
+  }
+
+  function saveField(field) {
+    if (draft[field] === pigeon[field]) return;
+    onUpdateField(pigeon.id, field, draft[field]);
+  }
+
+  const parentIds = draft.parentIds || [];
+  const parentOneId = parentIds[0] || "";
+  const parentTwoId = parentIds[1] || "";
+
+  function getPigeonNameById(id) {
+    return pigeons.find((item) => item.id === id)?.name || "Unknown";
+  }
+
+  function wouldCreateCycle(parentId) {
+    if (!parentId) return false;
+    return hasDescendant(pigeons, pigeon.id, parentId);
+  }
+
+  function updateParentAtIndex(index, value) {
+    const nextValue = value === "none" ? "" : value;
+
+    if (nextValue && wouldCreateCycle(nextValue)) {
+      alert("That parent would create a family tree loop.");
+      return;
+    }
+
+    const nextParentIds = [...parentIds];
+
+    if (nextValue) {
+      nextParentIds[index] = nextValue;
+    } else {
+      nextParentIds.splice(index, 1);
+    }
+
+    const cleanedParentIds = [...new Set(nextParentIds.filter(Boolean))];
+
+    setDraft((current) => ({
+      ...current,
+      parentIds: cleanedParentIds,
+    }));
+
+    onUpdateParents(pigeon.id, cleanedParentIds);
+  }
+
+  const parentOneOptions = pigeons.filter(
+    (item) => item.id !== pigeon.id && item.id !== parentTwoId,
+  );
+
+  const parentTwoOptions = pigeons.filter(
+    (item) => item.id !== pigeon.id && item.id !== parentOneId,
+  );
 
   return (
     <Card
@@ -144,9 +226,11 @@ function PigeonPopup({ pigeon, position, onClose, onChange }) {
     >
       <CardHeader className="flex flex-row items-start justify-between space-y-0">
         <div>
-          <CardTitle className="text-base">{pigeon.name}</CardTitle>
+          <CardTitle className="text-base">
+            {draft.name || "Unnamed bird"}
+          </CardTitle>
           <p className="text-xs text-muted-foreground">
-            {pigeon.bandId || "Unbanded"}
+            {draft.bandId || "Unbanded"}
           </p>
         </div>
 
@@ -160,13 +244,10 @@ function PigeonPopup({ pigeon, position, onClose, onChange }) {
           <Label htmlFor="pigeon-name">Name</Label>
           <Input
             id="pigeon-name"
-            value={pigeon.name || ""}
-            onChange={(event) =>
-              onChange({
-                ...pigeon,
-                name: event.target.value,
-              })
-            }
+            value={draft.name || ""}
+            disabled={!isAdmin}
+            onChange={(event) => updateDraft("name", event.target.value)}
+            onBlur={() => saveField("name")}
           />
         </div>
 
@@ -174,27 +255,91 @@ function PigeonPopup({ pigeon, position, onClose, onChange }) {
           <Label htmlFor="pigeon-birthday">Birthday</Label>
           <Input
             id="pigeon-birthday"
-            value={pigeon.birthday || ""}
+            value={draft.birthday || ""}
             placeholder="Unknown"
-            onChange={(event) =>
-              onChange({
-                ...pigeon,
-                birthday: event.target.value,
-              })
-            }
+            disabled={!isAdmin}
+            onChange={(event) => updateDraft("birthday", event.target.value)}
+            onBlur={() => saveField("birthday")}
           />
+        </div>
+
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="space-y-2">
+            <Label>Parent 1</Label>
+
+            <Select
+              value={parentOneId || "none"}
+              disabled={!isAdmin}
+              onValueChange={(value) => updateParentAtIndex(0, value)}
+            >
+              <SelectTrigger>
+                <SelectValue>
+                  {parentOneId ? getPigeonNameById(parentOneId) : "Unknown"}
+                </SelectValue>
+              </SelectTrigger>
+
+              <SelectContent>
+                <SelectItem value="none">Unknown</SelectItem>
+
+                {parentOneOptions.map((item) => (
+                  <SelectItem key={item.id} value={item.id}>
+                    <div className="flex flex-col">
+                      <span>{item.name}</span>
+                      {/* {item.bandId ? ( */}
+                      {/*   <span className="text-xs text-muted-foreground"> */}
+                      {/*     {item.bandId} */}
+                      {/*   </span> */}
+                      {/* ) : null} */}
+                    </div>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Parent 2</Label>
+
+            <Select
+              value={parentTwoId || "none"}
+              disabled={!isAdmin}
+              onValueChange={(value) => updateParentAtIndex(1, value)}
+            >
+              <SelectTrigger>
+                <SelectValue>
+                  {parentTwoId ? getPigeonNameById(parentTwoId) : "Unknown"}
+                </SelectValue>
+              </SelectTrigger>
+
+              <SelectContent>
+                <SelectItem value="none">Unknown</SelectItem>
+
+                {parentTwoOptions.map((item) => (
+                  <SelectItem key={item.id} value={item.id}>
+                    <div className="flex flex-col">
+                      <span>{item.name}</span>
+                      {/* {item.bandId ? ( */}
+                      {/*   <span className="text-xs text-muted-foreground"> */}
+                      {/*     {item.bandId} */}
+                      {/*   </span> */}
+                      {/* ) : null} */}
+                    </div>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
         </div>
 
         <div className="space-y-2">
           <Label>Status</Label>
           <Select
-            value={pigeon.status}
-            onValueChange={(status) =>
-              onChange({
-                ...pigeon,
-                status,
-              })
-            }
+            value={draft.status || "home"}
+            disabled={!isAdmin}
+            onValueChange={(status) => {
+              updateDraft("status", status);
+              onUpdateField(pigeon.id, "status", status);
+            }}
           >
             <SelectTrigger>
               <SelectValue placeholder="Select status" />
@@ -214,14 +359,11 @@ function PigeonPopup({ pigeon, position, onClose, onChange }) {
           <Label htmlFor="pigeon-notes">Notes</Label>
           <Textarea
             id="pigeon-notes"
-            value={pigeon.notes || ""}
+            value={draft.notes || ""}
+            disabled={!isAdmin}
             placeholder="Medical notes, description, behavior..."
-            onChange={(event) =>
-              onChange({
-                ...pigeon,
-                notes: event.target.value,
-              })
-            }
+            onChange={(event) => updateDraft("notes", event.target.value)}
+            onBlur={() => saveField("notes")}
           />
         </div>
       </CardContent>
@@ -489,146 +631,7 @@ function hasDescendant(pigeons, parentId, descendantId) {
   return false;
 }
 
-function PigeonEditor({
-  pigeon,
-  pigeons,
-  onClose,
-  onUpdateField,
-  onAddChild,
-  onRemoveChild,
-}) {
-  const [childToAdd, setChildToAdd] = useState("");
-
-  if (!pigeon) return null;
-
-  const children = pigeons.filter((item) =>
-    item.parentIds?.includes(pigeon.id),
-  );
-
-  const possibleChildren = pigeons.filter((item) => {
-    if (item.id === pigeon.id) return false;
-    if (item.parentIds?.includes(pigeon.id)) return false;
-    if ((item.parentIds?.length || 0) >= 2) return false;
-
-    // Prevent cycles.
-    if (hasDescendant(pigeons, item.id, pigeon.id)) return false;
-
-    return true;
-  });
-
-  return (
-    <aside className="fixed right-4 top-4 z-50 w-[360px] rounded-xl border-2 border-r-4 bg-white p-5 shadow-md">
-      <div className="mb-4 flex items-start justify-between gap-4">
-        <div>
-          <p className="text-xs text-gray-500">Editing pigeon</p>
-          <h2 className="text-xl font-semibold">{pigeon.name}</h2>
-        </div>
-
-        <button
-          onClick={onClose}
-          className="rounded-lg border px-3 py-1 text-sm hover:bg-gray-50"
-        >
-          Close
-        </button>
-      </div>
-
-      <div className="space-y-4">
-        <label className="block">
-          <span className="text-sm font-medium">Name</span>
-          <input
-            value={pigeon.name}
-            onChange={(event) =>
-              onUpdateField(pigeon.id, "name", event.target.value)
-            }
-            className="mt-1 w-full rounded-lg border px-3 py-2 text-sm"
-          />
-        </label>
-
-        <label className="block">
-          <span className="text-sm font-medium">Birthday</span>
-          <input
-            value={pigeon.birthday || ""}
-            onChange={(event) =>
-              onUpdateField(pigeon.id, "birthday", event.target.value)
-            }
-            placeholder="Unknown"
-            className="mt-1 w-full rounded-lg border px-3 py-2 text-sm"
-          />
-        </label>
-
-        <label className="block">
-          <span className="text-sm font-medium">Status</span>
-          <select
-            value={pigeon.status}
-            onChange={(event) =>
-              onUpdateField(pigeon.id, "status", event.target.value)
-            }
-            className="mt-1 w-full rounded-lg border px-3 py-2 text-sm"
-          >
-            <option value="home">home</option>
-            <option value="flying">flying</option>
-            <option value="lost">lost</option>
-          </select>
-        </label>
-
-        <div className="rounded-xl border p-3">
-          <p className="mb-2 text-sm font-medium">Children</p>
-
-          {children.length > 0 ? (
-            <div className="space-y-2">
-              {children.map((child) => (
-                <div
-                  key={child.id}
-                  className="flex items-center justify-between gap-3 rounded-lg bg-gray-50 px-3 py-2 text-sm"
-                >
-                  <span>{child.name}</span>
-
-                  <button
-                    onClick={() => onRemoveChild(pigeon.id, child.id)}
-                    className="text-xs text-red-600 hover:underline"
-                  >
-                    Remove
-                  </button>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="text-sm text-gray-500">No children listed.</p>
-          )}
-
-          <div className="mt-3 flex gap-2">
-            <select
-              value={childToAdd}
-              onChange={(event) => setChildToAdd(event.target.value)}
-              className="min-w-0 flex-1 rounded-lg border px-3 py-2 text-sm"
-            >
-              <option value="">Add child...</option>
-
-              {possibleChildren.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.name}
-                </option>
-              ))}
-            </select>
-
-            <button
-              disabled={!childToAdd}
-              onClick={() => {
-                onAddChild(pigeon.id, childToAdd);
-                setChildToAdd("");
-              }}
-              className="rounded-lg border px-3 py-2 text-sm disabled:opacity-40"
-            >
-              Add
-            </button>
-          </div>
-        </div>
-      </div>
-    </aside>
-  );
-}
-
-function TopNav({ onCreateBird }) {
+function TopNav({ onCreateBird, onOpenAdmin, isAdmin }) {
   const pathname = usePathname();
 
   const links = [
@@ -639,7 +642,6 @@ function TopNav({ onCreateBird }) {
 
   return (
     <nav className="absolute top-4 left-0 z-10 w-full">
-      {/* Centered navbar */}
       <div className="absolute left-1/2 -translate-x-1/2 rounded-lg ring-2 ring-ring border-b-4 bg-white/90 px-2 py-2 shadow-md backdrop-blur transition-all hover:scale-105">
         <div className="flex items-center gap-1">
           {links.map((link) => {
@@ -669,7 +671,6 @@ function TopNav({ onCreateBird }) {
         </div>
       </div>
 
-      {/* Button to the right of navbar */}
       <Button
         type="button"
         onClick={onCreateBird}
@@ -679,14 +680,16 @@ function TopNav({ onCreateBird }) {
         <PiBird className="size-6" />
       </Button>
 
-      {/* Button to the left of navbar */}
       <Button
         type="button"
-        onClick={onCreateBird}
-        className="absolute right-1/2 mr-36 h-[56px] w-[62px] rounded-lg border-0 border-b-4 border-dot bg-white p-0 text-muted-foreground ring-2 ring-ring shadow-md backdrop-blur hover:scale-105 hover:text-primary"
-        aria-label="Add new bird"
+        onClick={onOpenAdmin}
+        className={`absolute right-1/2 mr-36 h-[56px] w-[62px] rounded-lg border-0 border-b-4 border-dot bg-white p-0 ring-2 ring-ring shadow-md backdrop-blur hover:scale-105 hover:text-primary ${
+          isAdmin ? "text-primary" : "text-muted-foreground"
+        }`}
+        aria-label="Admin settings"
+        title={isAdmin ? "Admin connected" : "Admin settings"}
       >
-        <IoSettingsOutline className="size-6" />
+        <IoPersonOutline className="size-6" />
       </Button>
     </nav>
   );
@@ -748,6 +751,10 @@ function NewPigeonDialog({ open, onOpenChange, pigeons, onCreate }) {
     (pigeon) => pigeon.id !== form.parentOneId,
   );
 
+  function getPigeonNameById(id) {
+    return pigeons.find((pigeon) => pigeon.id === id)?.name || "Unknown";
+  }
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[520px]">
@@ -775,16 +782,18 @@ function NewPigeonDialog({ open, onOpenChange, pigeons, onCreate }) {
               <Label>Birthday</Label>
 
               <Popover>
-                <PopoverTrigger asChild>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="w-full justify-start text-left font-normal"
-                  >
-                    <CalendarIcon className="mr-2 h-4 w-4" />
-                    {form.birthday || "Select birthday"}
-                  </Button>
-                </PopoverTrigger>
+                <PopoverTrigger
+                  render={
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="w-full justify-start text-left font-normal"
+                    >
+                      <CalendarIcon className="mr-2 h-4 w-4" />
+                      {form.birthday || "Select birthday"}
+                    </Button>
+                  }
+                ></PopoverTrigger>
 
                 <PopoverContent className="w-auto p-0" align="start">
                   <Calendar
@@ -814,6 +823,7 @@ function NewPigeonDialog({ open, onOpenChange, pigeons, onCreate }) {
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label>Parent 1</Label>
+
               <Select
                 value={form.parentOneId || "none"}
                 onValueChange={(value) =>
@@ -821,13 +831,26 @@ function NewPigeonDialog({ open, onOpenChange, pigeons, onCreate }) {
                 }
               >
                 <SelectTrigger>
-                  <SelectValue placeholder="Unknown" />
+                  <SelectValue>
+                    {form.parentOneId
+                      ? getPigeonNameById(form.parentOneId)
+                      : "Unknown"}
+                  </SelectValue>
                 </SelectTrigger>
+
                 <SelectContent>
                   <SelectItem value="none">Unknown</SelectItem>
+
                   {parentOneOptions.map((pigeon) => (
                     <SelectItem key={pigeon.id} value={pigeon.id}>
-                      {pigeon.name}
+                      <div className="flex flex-col">
+                        <span>{pigeon.name}</span>
+                        {pigeon.bandId ? (
+                          <span className="text-xs text-muted-foreground">
+                            {pigeon.bandId}
+                          </span>
+                        ) : null}
+                      </div>
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -836,6 +859,7 @@ function NewPigeonDialog({ open, onOpenChange, pigeons, onCreate }) {
 
             <div className="space-y-2">
               <Label>Parent 2</Label>
+
               <Select
                 value={form.parentTwoId || "none"}
                 onValueChange={(value) =>
@@ -843,13 +867,26 @@ function NewPigeonDialog({ open, onOpenChange, pigeons, onCreate }) {
                 }
               >
                 <SelectTrigger>
-                  <SelectValue placeholder="Unknown" />
+                  <SelectValue>
+                    {form.parentTwoId
+                      ? getPigeonNameById(form.parentTwoId)
+                      : "Unknown"}
+                  </SelectValue>
                 </SelectTrigger>
+
                 <SelectContent>
                   <SelectItem value="none">Unknown</SelectItem>
+
                   {parentTwoOptions.map((pigeon) => (
                     <SelectItem key={pigeon.id} value={pigeon.id}>
-                      {pigeon.name}
+                      <div className="flex flex-col">
+                        <span>{pigeon.name}</span>
+                        {pigeon.bandId ? (
+                          <span className="text-xs text-muted-foreground">
+                            {pigeon.bandId}
+                          </span>
+                        ) : null}
+                      </div>
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -936,10 +973,102 @@ function NewPigeonDialog({ open, onOpenChange, pigeons, onCreate }) {
   );
 }
 
+function AdminLoginDialog({ open, onOpenChange, onLogin }) {
+  const [email, setEmail] = useState("joshuamarkle25@gmail.com");
+  const [password, setPassword] = useState("");
+  const [errorMessage, setErrorMessage] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  async function handleSubmit(event) {
+    event.preventDefault();
+
+    try {
+      setSubmitting(true);
+      setErrorMessage("");
+
+      await signInAdmin(email.trim(), password);
+
+      const admin = await getIsCoopAdmin();
+
+      if (!admin) {
+        throw new Error("Logged in, but this account is not a coop admin.");
+      }
+
+      onLogin();
+      setPassword("");
+      onOpenChange(false);
+    } catch (error) {
+      setErrorMessage(error?.message || "Login failed.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-[380px]">
+        <DialogHeader>
+          <DialogTitle>Admin connection</DialogTitle>
+          <DialogDescription>
+            Enter the secret password to make changes
+          </DialogDescription>
+        </DialogHeader>
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          {/* <div className="space-y-2"> */}
+          {/*   <Label htmlFor="admin-email">Email</Label> */}
+          {/*   <Input */}
+          {/*     id="admin-email" */}
+          {/*     value={email} */}
+          {/*     onChange={(event) => setEmail(event.target.value)} */}
+          {/*     type="email" */}
+          {/*     autoComplete="email" */}
+          {/*     required */}
+          {/*   /> */}
+          {/* </div> */}
+          <div className="space-y-2">
+            <Label htmlFor="admin-password">Password</Label>
+            <Input
+              id="admin-password"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              type="password"
+              autoComplete="current-password"
+              required
+            />
+          </div>
+
+          {errorMessage ? (
+            <p className="text-sm text-red-600">{errorMessage}</p>
+          ) : null}
+
+          <div className="flex justify-end gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => onOpenChange(false)}
+              disabled={submitting}
+            >
+              Cancel
+            </Button>
+
+            <Button type="submit" disabled={submitting}>
+              {submitting ? "Connecting..." : "Connect"}
+            </Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function PigeonGraph() {
   const reactFlow = useReactFlow();
 
-  const [pigeons, setPigeons] = useState(mockPigeons);
+  const [pigeons, setPigeons] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
+
   const [nodes, setNodes] = useState([]);
   const [edges, setEdges] = useState([]);
   const [hoveredPigeonId, setHoveredPigeonId] = useState(null);
@@ -947,6 +1076,98 @@ function PigeonGraph() {
   const [selectedNode, setSelectedNode] = useState(null);
   const [popupPosition, setPopupPosition] = useState(null);
   const [newPigeonOpen, setNewPigeonOpen] = useState(false);
+
+  const [adminLoginOpen, setAdminLoginOpen] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
+
+  function requireAdmin(callback) {
+    if (isAdmin) {
+      callback();
+      return;
+    }
+
+    setAdminLoginOpen(true);
+  }
+
+  useEffect(() => {
+    let mounted = true;
+
+    async function restoreAdminSession() {
+      try {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+
+        if (!mounted || !session) return;
+
+        const admin = await getIsCoopAdmin();
+
+        if (mounted) {
+          setIsAdmin(admin);
+        }
+      } catch (error) {
+        console.error("restoreAdminSession failed:", error);
+        if (mounted) {
+          setIsAdmin(false);
+        }
+      }
+    }
+
+    restoreAdminSession();
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (!mounted) return;
+
+      if (!session || event === "SIGNED_OUT") {
+        setIsAdmin(false);
+        return;
+      }
+
+      const admin = await getIsCoopAdmin();
+      setIsAdmin(admin);
+    });
+
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
+  }, []);
+
+  useEffect(() => {
+    async function loadData() {
+      try {
+        setLoading(true);
+        setLoadError(null);
+
+        const loadedPigeons = await fetchPigeonsWithParents();
+
+        setPigeons(loadedPigeons);
+        await runLayout(loadedPigeons, false);
+      } catch (error) {
+        console.error("loadData failed:", {
+          message: error?.message,
+          details: error?.details,
+          hint: error?.hint,
+          code: error?.code,
+          raw: error,
+        });
+
+        setLoadError(
+          error?.message ||
+            error?.details ||
+            error?.hint ||
+            JSON.stringify(error) ||
+            "Failed to load pigeons.",
+        );
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    loadData();
+  }, []);
 
   const selectedPigeon = useMemo(
     () => pigeons.find((pigeon) => pigeon.id === selectedPigeonId) || null,
@@ -1043,13 +1264,114 @@ function PigeonGraph() {
     );
   }
 
+  async function updatePigeonParents(pigeonId, parentIds) {
+    const nextPigeons = pigeons.map((pigeon) =>
+      pigeon.id === pigeonId
+        ? {
+            ...pigeon,
+            parentIds,
+          }
+        : pigeon,
+    );
+
+    try {
+      await setPigeonParentsInDb(pigeonId, parentIds);
+
+      setPigeons(nextPigeons);
+      await runLayout(nextPigeons, true);
+    } catch (error) {
+      console.error(error);
+      alert(error.message || "Failed to save parents.");
+    }
+  }
+
   async function createPigeon(nextPigeon) {
-    const nextPigeons = [...pigeons, nextPigeon];
+    try {
+      const createdPigeon = await createPigeonInDb(nextPigeon);
+      const nextPigeons = [...pigeons, createdPigeon];
 
-    setPigeons(nextPigeons);
-    await runLayout(nextPigeons, true);
+      setPigeons(nextPigeons);
+      await runLayout(nextPigeons, true);
+      setSelectedPigeonId(createdPigeon.id);
+    } catch (error) {
+      console.error(error);
+      alert(error.message || "Failed to create pigeon.");
+    }
+  }
 
-    setSelectedPigeonId(nextPigeon.id);
+  async function updatePigeonField(pigeonId, field, value) {
+    setPigeons((current) =>
+      current.map((pigeon) =>
+        pigeon.id === pigeonId ? { ...pigeon, [field]: value } : pigeon,
+      ),
+    );
+
+    setNodes((current) =>
+      current.map((node) => {
+        if (node.id !== pigeonId) return node;
+
+        return {
+          ...node,
+          data: {
+            ...node.data,
+            [field]: value,
+          },
+        };
+      }),
+    );
+
+    try {
+      await updatePigeonInDb(pigeonId, {
+        [field]: value,
+      });
+    } catch (error) {
+      console.error(error);
+      alert(error.message || "Failed to save pigeon.");
+    }
+  }
+
+  async function addChild(parentId, childId) {
+    const nextPigeons = pigeons.map((pigeon) => {
+      if (pigeon.id !== childId) return pigeon;
+
+      return {
+        ...pigeon,
+        parentIds: [...(pigeon.parentIds || []), parentId],
+      };
+    });
+
+    try {
+      const child = nextPigeons.find((pigeon) => pigeon.id === childId);
+      await setPigeonParentsInDb(childId, child.parentIds);
+
+      setPigeons(nextPigeons);
+      await runLayout(nextPigeons, true);
+    } catch (error) {
+      console.error(error);
+      alert(error.message || "Failed to add child.");
+    }
+  }
+
+  async function removeChild(parentId, childId) {
+    const nextPigeons = pigeons.map((pigeon) => {
+      if (pigeon.id !== childId) return pigeon;
+
+      return {
+        ...pigeon,
+        parentIds: (pigeon.parentIds || []).filter((id) => id !== parentId),
+      };
+    });
+
+    try {
+      const child = nextPigeons.find((pigeon) => pigeon.id === childId);
+      await setPigeonParentsInDb(childId, child.parentIds);
+
+      setPigeons(nextPigeons);
+      await runLayout(nextPigeons, true);
+    } catch (error) {
+      console.error(error);
+      alert(error.message || "Failed to remove child.");
+    }
   }
 
   function updatePopupPosition(node) {
@@ -1115,7 +1437,11 @@ function PigeonGraph() {
         <MiniMap zoomable pannable />
       </ReactFlow>
 
-      <TopNav onCreateBird={() => setNewPigeonOpen(true)} />
+      <TopNav
+        isAdmin={isAdmin}
+        onCreateBird={() => requireAdmin(() => setNewPigeonOpen(true))}
+        onOpenAdmin={() => setAdminLoginOpen(true)}
+      />
 
       <NewPigeonDialog
         open={newPigeonOpen}
@@ -1124,14 +1450,23 @@ function PigeonGraph() {
         onCreate={createPigeon}
       />
 
+      <AdminLoginDialog
+        open={adminLoginOpen}
+        onOpenChange={setAdminLoginOpen}
+        onLogin={() => setIsAdmin(true)}
+      />
+
       <PigeonPopup
         pigeon={selectedPigeon}
+        pigeons={pigeons}
         position={popupPosition}
+        isAdmin={isAdmin}
         onClose={() => {
           setSelectedPigeonId(null);
           setPopupPosition(null);
         }}
-        onChange={updateSelectedPigeon}
+        onUpdateField={updatePigeonField}
+        onUpdateParents={updatePigeonParents}
       />
     </main>
   );
