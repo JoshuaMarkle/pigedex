@@ -1,0 +1,54 @@
+{
+  "name": "Pigedex",
+  "short_name": "Pigedex",
+  "description": "The all-in-one platform for modern loft management.",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#ffffff",
+  "theme_color": "#1e96eb",
+  "categories": ["utilities", "lifestyle"],
+  "icons": [
+    {
+      "src": "/icons/pigedex-logo-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/pigedex-logo-256.png",
+      "sizes": "256x256",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/pigedex-logo-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Family Tree",
+      "short_name": "Tree",
+      "description": "Open the pigeon family tree",
+      "url": "/",
+      "icons": [{ "src": "/icons/pigedex-logo-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Catalog",
+      "short_name": "Catalog",
+      "description": "Browse your pigeon catalog",
+      "url": "/catalog",
+      "icons": [{ "src": "/icons/pigedex-logo-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Flights",
+      "short_name": "Flights",
+      "description": "Track flights",
+      "url": "/flights",
+      "icons": [{ "src": "/icons/pigedex-logo-192.png", "sizes": "192x192" }]
+    }
+  ]
+}

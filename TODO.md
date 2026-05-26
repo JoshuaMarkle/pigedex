@@ -68,3 +68,19 @@ Fixes Round 2
   - make pigeon edits inline: (pigeon name)(space if possible)(status dropdown)(flight time input;none)
     - would be nice if there is a format to the flight time so its standard in the database like Xd Xh Xm Xs and its covvert to seconds for the database
   - save changes button
+
+Fixes Round 3
+
+- add top navbar to catalog page
+- catalog make successful flights work; a returned pigeon is a successful flight; just looks through the flight_pigeons table
+- make individual pigeon page
+  - ignore actual images right now; will add uploads later
+  - make with the assumption there will be a profile picture and other just images
+  - similar style to the catalog; should also have top navbar without left and right buttons
+  - everything about the pigeon is editable
+  - can view all flights that pigeon went on with times
+
+Fixes Round 4
+
+- When not authenticated
+  - not able to add flights on the flights/
