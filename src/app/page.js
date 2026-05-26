@@ -164,6 +164,37 @@ function PigeonGraph() {
     };
   }, []);
 
+  const selectedPigeon = useMemo(
+    () => pigeons.find((pigeon) => pigeon.id === selectedPigeonId) || null,
+    [pigeons, selectedPigeonId],
+  );
+
+  const handleHover = useCallback((pigeonId) => {
+    setHoveredPigeonId(pigeonId);
+  }, []);
+
+  const runLayout = useCallback(
+    async (nextPigeons, preserveViewport = false) => {
+      const viewport = preserveViewport ? reactFlow.getViewport() : null;
+
+      const { nodes: rawNodes, edges: rawEdges } = buildGraphData(nextPigeons, {
+        onHover: handleHover,
+      });
+
+      const layouted = await layoutWithElk(rawNodes, rawEdges);
+
+      setNodes(layouted.nodes);
+      setEdges(layouted.edges);
+
+      if (viewport) {
+        requestAnimationFrame(() => {
+          reactFlow.setViewport(viewport);
+        });
+      }
+    },
+    [reactFlow, handleHover],
+  );
+
   useEffect(() => {
     async function loadData() {
       try {
@@ -196,47 +227,7 @@ function PigeonGraph() {
     }
 
     loadData();
-  }, []);
-
-  const selectedPigeon = useMemo(
-    () => pigeons.find((pigeon) => pigeon.id === selectedPigeonId) || null,
-    [pigeons, selectedPigeonId],
-  );
-
-  const handleHover = useCallback((pigeonId) => {
-    setHoveredPigeonId(pigeonId);
-  }, []);
-
-  const handleSelect = useCallback((pigeonId) => {
-    setSelectedPigeonId(pigeonId);
-  }, []);
-
-  const runLayout = useCallback(
-    async (nextPigeons, preserveViewport = false) => {
-      const viewport = preserveViewport ? reactFlow.getViewport() : null;
-
-      const { nodes: rawNodes, edges: rawEdges } = buildGraphData(nextPigeons, {
-        onHover: handleHover,
-        onSelect: handleSelect,
-      });
-
-      const layouted = await layoutWithElk(rawNodes, rawEdges);
-
-      setNodes(layouted.nodes);
-      setEdges(layouted.edges);
-
-      if (viewport) {
-        requestAnimationFrame(() => {
-          reactFlow.setViewport(viewport);
-        });
-      }
-    },
-    [reactFlow, handleHover, handleSelect],
-  );
-
-  useEffect(() => {
-    runLayout(pigeons, false);
-  }, []);
+  }, [runLayout]);
 
   const highlightedEdgeIds = useMemo(() => {
     if (!hoveredPigeonId) return new Set();

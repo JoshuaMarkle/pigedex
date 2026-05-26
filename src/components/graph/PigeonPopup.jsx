@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -18,7 +18,13 @@ import { hasDescendant } from "@/lib/graph/graphData";
 
 // ----- Popup ----- //
 
-export default function PigeonPopup({
+export default function PigeonPopup(props) {
+  if (!props.pigeon || !props.position) return null;
+
+  return <PigeonPopupContent key={props.pigeon.id} {...props} />;
+}
+
+function PigeonPopupContent({
   pigeon,
   pigeons,
   position,
@@ -27,15 +33,7 @@ export default function PigeonPopup({
   onUpdateParents,
   isAdmin,
 }) {
-  const [draft, setDraft] = useState(null);
-
-  useEffect(() => {
-    if (pigeon) {
-      setDraft(pigeon);
-    }
-  }, [pigeon]);
-
-  if (!pigeon || !position || !draft) return null;
+  const [draft, setDraft] = useState(pigeon);
 
   function updateDraft(field, value) {
     setDraft((current) => ({

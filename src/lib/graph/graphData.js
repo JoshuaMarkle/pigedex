@@ -19,7 +19,6 @@ export function buildGraphData(pigeons, handlers) {
       status: pigeon.status,
       imageUrl: pigeon.imageUrl,
       onHover: handlers.onHover,
-      onSelect: handlers.onSelect,
     },
     width: pigeonWidth,
     height: pigeonHeight,
