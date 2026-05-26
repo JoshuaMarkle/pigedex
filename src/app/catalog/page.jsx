@@ -5,7 +5,9 @@ import Link from "next/link";
 import { PiBirdBold } from "react-icons/pi";
 
 import { fetchPigeonsWithParents } from "@/lib/pigeonDb";
+import { fetchFlightsWithPigeons } from "@/lib/flightDb";
 
+import SimpleTopNav from "@/components/SimpleTopNav";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -347,6 +349,7 @@ function BirthdayStatCard({ nextBirthday }) {
 
 export default function CatalogPage() {
   const [pigeons, setPigeons] = useState([]);
+  const [flights, setFlights] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
 
@@ -357,18 +360,22 @@ export default function CatalogPage() {
   useEffect(() => {
     let mounted = true;
 
-    async function loadPigeons() {
+    async function load() {
       try {
         setLoading(true);
         setLoadError("");
 
-        const loadedPigeons = await fetchPigeonsWithParents();
+        const [loadedPigeons, loadedFlights] = await Promise.all([
+          fetchPigeonsWithParents(),
+          fetchFlightsWithPigeons().catch(() => []),
+        ]);
 
         if (mounted) {
           setPigeons(loadedPigeons);
+          setFlights(loadedFlights);
         }
       } catch (error) {
-        console.error("loadPigeons failed:", error);
+        console.error("load failed:", error);
 
         if (mounted) {
           setLoadError(error?.message || "Failed to load pigeons.");
@@ -380,7 +387,7 @@ export default function CatalogPage() {
       }
     }
 
-    loadPigeons();
+    load();
 
     return () => {
       mounted = false;
@@ -393,14 +400,22 @@ export default function CatalogPage() {
       (pigeon) => pigeon.status === "home",
     ).length;
 
+    // A "flight" here = one pigeon's participation in one flight (a flight_pigeons row).
+    // Successful = the pigeon returned.
+    const allFlightPigeons = flights.flatMap((f) => f.pigeons ?? []);
+    const totalFlights = allFlightPigeons.length;
+    const successfulFlights = allFlightPigeons.filter(
+      (fp) => fp.result === "returned",
+    ).length;
+
     return {
       pigeonsHome,
       totalPigeons,
-      successfulFlights: 0,
-      totalFlights: 0,
+      successfulFlights,
+      totalFlights,
       nextBirthday: getNextBirthday(pigeons),
     };
-  }, [pigeons]);
+  }, [pigeons, flights]);
 
   const visiblePigeons = useMemo(() => {
     const searchValue = search.trim().toLowerCase();
@@ -423,12 +438,16 @@ export default function CatalogPage() {
   }, [pigeons, search, statusFilter, sortBy]);
 
   return (
-    <main className="min-h-screen bg-background px-6 py-8">
-      <div className="mx-auto max-w-5xl space-y-8">
-        <h1 className="text-2xl font-semibold m-0">Catalog</h1>
-        <p className="text-muted-foreground">
-          See the whole family in one place
-        </p>
+    <main className="relative min-h-screen bg-background">
+      <SimpleTopNav />
+
+      <div className="mx-auto max-w-5xl px-6 pt-24 pb-12 space-y-8">
+        <header>
+          <h1 className="text-2xl font-semibold m-0">Catalog</h1>
+          <p className="text-muted-foreground">
+            See the whole family in one place
+          </p>
+        </header>
         <section className="grid gap-4 sm:grid-cols-3">
           <StatCard
             label="Pigeons home"
