@@ -322,7 +322,6 @@ export default function PigeonDetailPage({ params }) {
 
   async function handleFileSelected(e) {
     const file = e.target.files?.[0];
-    e.target.value = "";
     if (!file || !pigeon) return;
 
     const currentImages = pigeon.images ?? [];
@@ -333,7 +332,15 @@ export default function PigeonDetailPage({ params }) {
 
     try {
       const makeProfile = uploadingProfile || currentImages.length === 0;
-      const compressed = await compressImage(file);
+      console.log("[upload] starting:", file.name, file.type, file.size);
+      let compressed;
+      try {
+        compressed = await compressImage(file);
+        console.log("[upload] compressed:", compressed.name, compressed.type, compressed.size);
+      } catch (compressErr) {
+        console.error("[upload] compression error:", compressErr);
+        throw new Error(`Compression failed: ${compressErr?.message ?? String(compressErr)}`);
+      }
       const row = await uploadPigeonImage(pigeon.id, compressed, makeProfile);
 
       setPigeon((prev) => {
@@ -364,8 +371,10 @@ export default function PigeonDetailPage({ params }) {
         };
       });
     } catch (err) {
+      console.error("[upload] failed:", err);
       setImageError(err?.message ?? "Upload failed.");
     } finally {
+      e.target.value = "";
       setUploadingSlot(null);
       setUploadingProfile(false);
     }

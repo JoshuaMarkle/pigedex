@@ -148,16 +148,29 @@ export async function setPigeonParentsInDb(childId, parentIds) {
 
 const STORAGE_BUCKET = "pigeon-images";
 
-const MIME_TO_EXT = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "image/gif": "gif" };
+const MIME_TO_EXT = {
+  "image/jpeg": "jpg",
+  "image/png": "png",
+  "image/webp": "webp",
+  "image/gif": "gif",
+  "image/heic": "jpg",
+  "image/heif": "jpg",
+};
 
 export async function uploadPigeonImage(pigeonId, file, isProfile = false) {
-  const ext = MIME_TO_EXT[file.type] ?? file.name.split(".").pop()?.toLowerCase() ?? "jpg";
+  const mimeType = file.type || "image/jpeg";
+  const ext = MIME_TO_EXT[mimeType] ?? file.name.split(".").pop()?.toLowerCase() ?? "jpg";
   const path = `${pigeonId}/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
+
+  console.log("[upload] file:", file.name, "type:", mimeType, "size:", file.size, "path:", path);
 
   const { error: uploadError } = await supabase.storage
     .from(STORAGE_BUCKET)
-    .upload(path, file);
-  if (uploadError) throw uploadError;
+    .upload(path, file, { contentType: mimeType });
+  if (uploadError) {
+    console.error("[upload] storage error:", uploadError);
+    throw new Error(`Storage upload failed: ${uploadError.message} (status ${uploadError.statusCode ?? uploadError.status ?? "unknown"})`);
+  }
 
   const {
     data: { publicUrl },
@@ -191,7 +204,10 @@ export async function uploadPigeonImage(pigeonId, file, isProfile = false) {
     })
     .select()
     .single();
-  if (error) throw error;
+  if (error) {
+    console.error("[upload] db insert error:", error);
+    throw new Error(`DB insert failed: ${error.message} (code ${error.code ?? "unknown"})`);
+  }
   return data;
 }
 
