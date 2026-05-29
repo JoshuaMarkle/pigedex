@@ -196,8 +196,40 @@ function getStatusClass(status) {
   return "bg-muted text-muted-foreground";
 }
 
-function sortPigeons(pigeons, sortBy) {
+function sortPigeons(pigeons, sortBy, flights = []) {
   const sorted = [...pigeons];
+
+  if (sortBy === "recent-flights") {
+    const latestFlightDate = {};
+    for (const flight of flights) {
+      for (const fp of flight.pigeons ?? []) {
+        const existing = latestFlightDate[fp.pigeonId];
+        if (!existing || flight.flightDate > existing) {
+          latestFlightDate[fp.pigeonId] = flight.flightDate;
+        }
+      }
+    }
+
+    sorted.sort((a, b) => {
+      const dateA = latestFlightDate[a.id] ?? null;
+      const dateB = latestFlightDate[b.id] ?? null;
+
+      if (dateA !== dateB) {
+        if (!dateA) return 1;
+        if (!dateB) return -1;
+        return dateB.localeCompare(dateA);
+      }
+
+      const birthA = parseBirthday(a.birthday);
+      const birthB = parseBirthday(b.birthday);
+      if (!birthA && !birthB) return 0;
+      if (!birthA) return 1;
+      if (!birthB) return -1;
+      return birthA.getTime() - birthB.getTime();
+    });
+
+    return sorted;
+  }
 
   sorted.sort((a, b) => {
     if (sortBy === "birthday-newest") {
@@ -486,8 +518,8 @@ function CatalogContent() {
       return matchesStatus && matchesSearch;
     });
 
-    return sortPigeons(filtered, sortBy);
-  }, [pigeons, search, statusFilter, sortBy]);
+    return sortPigeons(filtered, sortBy, flights);
+  }, [pigeons, flights, search, statusFilter, sortBy]);
 
   return (
     <main className="relative min-h-screen bg-background">
@@ -564,6 +596,9 @@ function CatalogContent() {
                     <SelectItem value="name-az">Name, A to Z</SelectItem>
                     <SelectItem value="name-za">Name, Z to A</SelectItem>
                     <SelectItem value="status">Status</SelectItem>
+                    <SelectItem value="recent-flights">
+                      Most recent flights
+                    </SelectItem>
                   </SelectContent>
                 </Select>
               </div>

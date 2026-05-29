@@ -11,6 +11,7 @@
 
 ## Bug Fixes
 
+- Refresh for everything; app always requires many refreshes if it fails to get data or something
 - Regex input validation for flight times
   - \dd.*\dh.*\dm.*\ds.* -> disables apply changes and prints invalid message if wrong; highlights itself as red
 - Can't put in flight times when creating completed flight?
