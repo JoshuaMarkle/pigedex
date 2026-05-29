@@ -1,58 +1,33 @@
-# Pigeon Family Tree
+<div align="center">
+  <h1 align="center">🐦 Pigedex 🐦</h1>
+  <h3>All in one solution for modern loft management</h3>
+</div>
 
-A visualizer for the family tree of a pigeon coop.
+The [Pigedex](https://pigedex.joshuamarkle.com) is a progressive web app designed for pigeon coop management. It provides tools for tracking lineage, managing pigeon records, and logging flights through an interactive and visual interface.
 
-## Features TBD
+<br>
+<img width="1747" height="1200" alt="image" src="https://github.com/user-attachments/assets/88d87939-a128-41b3-8e1b-3939033e3138" />
 
-- Family tree
-  - Pigeon node edits
-    - Remove birthday precision (just string field not important)
-    - Able to change parents
-    - Able to add children
-      - makes new popup that asks for the other parent (could be unknown)
-      - add child button, brings up the new pigeon popup will filled in parents
-    - Link to more detailed pigeon entry
+## ✨ Features
+- Family tree/Catalog of pigeons
+- Flight management
+- Supported PWA (progressive web app)
+- User authentication
+- Overall working MVP
 
-- Flights page
-  - map like google maps
-  - maybe just a list of flights (like actual airline type ui)
-    - each flight contains a way to select a location in the popup
-  - will display if the pigeons are home/editing will update that pigeons status
-- Catalog page
-  - card view: display the pigeons like items on some marketplace (show images)
-    - sort by...name, birthday, status, band id
-    - filter by...name, birthday, status, band id
-    - search feature
+## 🚨 Known Issues
+- Only supports single user (but is extensible)
+- Minor UX challenges
 
-**Database Stuff**
+## 🚀 Future Improvements
+- Picture uploads
+- Use current location feature
+- Address
+- Flight planner
+- Badges/awards
 
-- Pigeon data structure (updated)
-  - hidden id, just for db stuff
-  - name, brithday, status (home/flying/lost)
-  - band id (?unknown), band color (default none; only used for ui rendering not imp)
-  - parent 1, parent 2 (could both be unknown)
-  - notes (just string for random information)
-  - images, pfp (something to point to the image of choice/could be number or url)
-- Flight data structure
-  - hidden id, just for db stuff
-  - date
-  - location (lat/long on real map)
-  - distance (calculated from the location back to home addr)
-  - notes (for now other stuff like flight times etc)
-- General
-  - home location
+## 🙏 Attribution
 
-**UI nicities**
-
-- Loading information
-- custom shadcn stuff
-
-**Future stuff**
-
-- flight times of pigeons
-
-## Problems
-
-- Deletions
-  - Parent is deleted, children should remove that parent from their parent slot
-- duplicate parents
+This project uses these services:
+- [Leaflet Interactive Maps](https://leafletjs.com/)
+- [Nominatim Address Search Engine](https://nominatim.openstreetmap.org/ui/about.html)
