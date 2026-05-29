@@ -2,7 +2,7 @@
 
 import dynamic from "next/dynamic";
 import { useEffect, useState } from "react";
-import { MapPin } from "lucide-react";
+import { MapPin, LocateFixed, Loader2 } from "lucide-react";
 
 import { upsertCoopSettings } from "@/lib/flightDb";
 
@@ -29,7 +29,9 @@ const HomePickerMap = dynamic(
   () => import("@/components/flights/HomePickerMap"),
   {
     ssr: false,
-    loading: () => <div className="h-[260px] rounded-lg bg-muted animate-pulse" />,
+    loading: () => (
+      <div className="h-[260px] rounded-lg bg-muted animate-pulse" />
+    ),
   },
 );
 
@@ -38,15 +40,41 @@ const HomePickerMap = dynamic(
 export default function FlightSettingsDialog({
   open,
   onOpenChange,
-  coopSettings,  // { homeName, homeLat, homeLng, distanceUnit } | null
+  coopSettings, // { homeName, homeLat, homeLng, distanceUnit } | null
   isAdmin,
-  onSave,        // (newSettings) => void
+  onSave, // (newSettings) => void
 }) {
   const [homeName, setHomeName] = useState("Home Coop");
   const [distanceUnit, setDistanceUnit] = useState("miles");
   const [homeLocation, setHomeLocation] = useState(null); // { lat, lng }
+  const [geoLoading, setGeoLoading] = useState(false);
+  const [geoError, setGeoError] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [confirmPending, setConfirmPending] = useState(false);
+
+  function handleUseCurrentLocation() {
+    if (!navigator.geolocation) {
+      setGeoError("Geolocation is not supported by your browser.");
+      return;
+    }
+    setGeoLoading(true);
+    setGeoError("");
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setHomeLocation({
+          lat: pos.coords.latitude,
+          lng: pos.coords.longitude,
+        });
+        setGeoLoading(false);
+      },
+      (err) => {
+        setGeoError(err.message ?? "Could not get location.");
+        setGeoLoading(false);
+      },
+      { enableHighAccuracy: false, timeout: 10000 },
+    );
+  }
 
   // Sync from props when dialog opens
   useEffect(() => {
@@ -59,12 +87,16 @@ export default function FlightSettingsDialog({
         : null,
     );
     setError("");
+    setConfirmPending(false);
   }, [open, coopSettings]);
 
-  async function handleSave(e) {
+  function handleSave(e) {
     e.preventDefault();
     if (!isAdmin) return;
+    setConfirmPending(true);
+  }
 
+  async function handleConfirmSave() {
     setSaving(true);
     setError("");
     try {
@@ -79,6 +111,7 @@ export default function FlightSettingsDialog({
       onOpenChange(false);
     } catch (err) {
       setError(err?.message ?? "Failed to save settings.");
+      setConfirmPending(false);
     } finally {
       setSaving(false);
     }
@@ -101,7 +134,7 @@ export default function FlightSettingsDialog({
         )}
 
         <form onSubmit={handleSave} className="space-y-4">
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid gap-4 sm:grid-cols-[1fr_140px]">
             <div className="space-y-2">
               <Label htmlFor="home-name">Home loft name</Label>
               <Input
@@ -120,7 +153,7 @@ export default function FlightSettingsDialog({
                 onValueChange={setDistanceUnit}
                 disabled={!isAdmin}
               >
-                <SelectTrigger>
+                <SelectTrigger className="w-full">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -139,15 +172,32 @@ export default function FlightSettingsDialog({
                 <MapPin className="h-3.5 w-3.5" />
                 Home loft location
               </Label>
-              {homeLocation && isAdmin && (
-                <button
-                  type="button"
-                  className="text-xs text-muted-foreground hover:text-destructive"
-                  onClick={() => setHomeLocation(null)}
-                >
-                  Clear
-                </button>
-              )}
+              <div className="flex items-center gap-2">
+                {isAdmin && (
+                  <button
+                    type="button"
+                    onClick={handleUseCurrentLocation}
+                    disabled={geoLoading}
+                    className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary disabled:opacity-50"
+                  >
+                    {geoLoading ? (
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                    ) : (
+                      <LocateFixed className="h-3 w-3" />
+                    )}
+                    My location
+                  </button>
+                )}
+                {homeLocation && isAdmin && (
+                  <button
+                    type="button"
+                    className="text-xs text-muted-foreground hover:text-destructive"
+                    onClick={() => setHomeLocation(null)}
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
             </div>
 
             <p className="text-xs text-muted-foreground">
@@ -155,6 +205,8 @@ export default function FlightSettingsDialog({
                 ? `${homeLocation.lat.toFixed(5)}°, ${homeLocation.lng.toFixed(5)}°`
                 : "Not set — click the map to place your home loft."}
             </p>
+
+            {geoError && <p className="text-xs text-red-500">{geoError}</p>}
 
             <HomePickerMap
               location={homeLocation}
@@ -168,21 +220,50 @@ export default function FlightSettingsDialog({
             </p>
           )}
 
-          <div className="flex justify-end gap-2 pt-2">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => onOpenChange(false)}
-              disabled={saving}
-            >
-              {isAdmin ? "Cancel" : "Close"}
-            </Button>
-            {isAdmin && (
-              <Button type="submit" disabled={saving}>
-                {saving ? "Saving…" : "Save settings"}
+          {confirmPending ? (
+            <div className="rounded-md border border-amber-300 bg-amber-50 px-4 py-3 space-y-3">
+              <p className="text-sm font-semibold text-amber-800">
+                Are you sure you want to save these changes?
+              </p>
+              <p className="text-sm text-amber-700">
+                Changing coop settings can break existing flight data and distance calculations. It is not recommended unless you know what you&apos;re doing.
+              </p>
+              <div className="flex justify-end gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setConfirmPending(false)}
+                  disabled={saving}
+                >
+                  Go back
+                </Button>
+                <Button
+                  type="button"
+                  variant="destructive"
+                  onClick={handleConfirmSave}
+                  disabled={saving}
+                >
+                  {saving ? "Saving…" : "Yes, save anyway"}
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex justify-end gap-2 pt-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => onOpenChange(false)}
+                disabled={saving}
+              >
+                {isAdmin ? "Cancel" : "Close"}
               </Button>
-            )}
-          </div>
+              {isAdmin && (
+                <Button type="submit" disabled={saving}>
+                  Save settings
+                </Button>
+              )}
+            </div>
+          )}
         </form>
       </DialogContent>
     </Dialog>

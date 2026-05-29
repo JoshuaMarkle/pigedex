@@ -67,7 +67,7 @@ export default function HomePickerMap({
   height = "260px",
 }) {
   const center = location ? [location.lat, location.lng] : [39.5, -98.35];
-  const zoom = location ? 6 : 4;
+  const zoom = location ? 15 : 4;
 
   return (
     <MapContainer

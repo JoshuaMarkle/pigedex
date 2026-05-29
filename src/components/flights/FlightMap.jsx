@@ -32,8 +32,8 @@ function dotIcon(color, size = 14) {
 }
 
 const homeIcon = dotIcon("#1e96eb", 16);
-const releaseIcon = dotIcon("#eb5539", 12);
-const activeReleaseIcon = dotIcon("#f59e0b", 14);
+const releaseIcon = dotIcon("#b1b1b7", 12);
+const activeReleaseIcon = dotIcon("#1e96eb", 14);
 
 function AutoFit({ bounds }) {
   const map = useMap();
@@ -47,7 +47,7 @@ function AutoFit({ bounds }) {
     try {
       const lb = L.latLngBounds(bounds.filter(Boolean));
       if (lb.isValid()) {
-        map.flyToBounds(lb, { padding: [48, 48], maxZoom: 10, duration: 0.8 });
+        map.flyToBounds(lb, { padding: [48, 48], maxZoom: 15, duration: 0.6 });
       }
     } catch {
       // ignore
@@ -82,15 +82,18 @@ export default function FlightMap({
     (f) => f.releaseLat != null && f.releaseLng != null,
   );
 
-  const allPositions = [
-    homePos,
-    ...releasePoints.map((f) => [f.releaseLat, f.releaseLng]),
-  ].filter(Boolean);
+  const activeRelease = releasePoints.find((f) => f.id === activeFlight);
+  const activeBounds =
+    homePos && activeRelease
+      ? [homePos, [activeRelease.releaseLat, activeRelease.releaseLng]]
+      : activeRelease
+        ? [[activeRelease.releaseLat, activeRelease.releaseLng]]
+        : null;
 
   return (
     <MapContainer
       center={center}
-      zoom={homeLocation ? 5 : 3}
+      zoom={homeLocation ? 11 : 3}
       zoomControl={false}
       style={{ height: "100%", width: "100%" }}
       scrollWheelZoom={true}
@@ -101,24 +104,28 @@ export default function FlightMap({
       />
       <ZoomControl position="bottomright" />
 
-      <AutoFit bounds={allPositions.length > 1 ? allPositions : null} />
+      <AutoFit bounds={activeBounds} />
 
       {/* Lines from each release to home */}
       {homePos &&
-        releasePoints.map((f) => {
-          const releasePos = [f.releaseLat, f.releaseLng];
-          const isActive = f.id === activeFlight;
-          return (
-            <Polyline
-              key={f.id}
-              positions={[releasePos, homePos]}
-              color={isActive ? "#f59e0b" : "#1e96eb"}
-              weight={isActive ? 3 : 1.5}
-              dashArray={isActive ? null : "6 5"}
-              opacity={isActive ? 0.9 : 0.5}
-            />
-          );
-        })}
+        [...releasePoints]
+          .sort((a, b) =>
+            a.id === activeFlight ? 1 : b.id === activeFlight ? -1 : 0,
+          )
+          .map((f) => {
+            const releasePos = [f.releaseLat, f.releaseLng];
+            const isActive = f.id === activeFlight;
+            return (
+              <Polyline
+                key={`${f.id}-${isActive}`}
+                positions={[releasePos, homePos]}
+                color={isActive ? "#1e96eb" : "#b1b1b7"}
+                weight={3}
+                dashArray={isActive ? null : "10 10"}
+                opacity={isActive ? 0.9 : 0.5}
+              />
+            );
+          })}
 
       {/* Release markers */}
       {releasePoints.map((f) => {
@@ -129,6 +136,7 @@ export default function FlightMap({
             key={f.id}
             position={[f.releaseLat, f.releaseLng]}
             icon={icon}
+            zIndexOffset={isActive ? 1000 : 0}
           >
             <Popup>
               <div className="text-sm">

@@ -1,17 +1,21 @@
 "use client";
 
-import { use, useEffect, useMemo, useState } from "react";
+import { use, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { format } from "date-fns";
 import {
   CalendarIcon,
   Save,
-  Archive,
   Loader2,
   ImageIcon,
   MapPin,
   PlaneTakeoff,
+  ExternalLink,
+  Plus,
+  Star,
+  Trash2,
+  X,
 } from "lucide-react";
 import { PiBirdBold } from "react-icons/pi";
 
@@ -19,8 +23,12 @@ import {
   fetchPigeonsWithParents,
   updatePigeonInDb,
   setPigeonParentsInDb,
-  archivePigeonInDb,
+  deletePigeonInDb,
+  uploadPigeonImage,
+  setPigeonProfileImage,
+  deletePigeonImage,
 } from "@/lib/pigeonDb";
+import { compressImage } from "@/lib/imageUtils";
 import { fetchFlightsWithPigeons, fetchCoopSettings } from "@/lib/flightDb";
 import {
   formatSecondsAsDuration,
@@ -28,7 +36,7 @@ import {
 } from "@/lib/durationUtils";
 import { getIsCoopAdmin } from "@/lib/auth";
 
-import SimpleTopNav from "@/components/SimpleTopNav";
+import TopNav from "@/components/TopNav";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -115,6 +123,13 @@ export default function PigeonDetailPage({ params }) {
   const [saveMessage, setSaveMessage] = useState("");
   const [saveError, setSaveError] = useState("");
 
+  // Image upload state
+  const fileInputRef = useRef(null);
+  const [uploadingProfile, setUploadingProfile] = useState(false);
+  const [uploadingSlot, setUploadingSlot] = useState(null); // index 0-3
+  const [imageError, setImageError] = useState("");
+  const [lightboxImageId, setLightboxImageId] = useState(null);
+
   // ── Load ──
   useEffect(() => {
     let mounted = true;
@@ -170,6 +185,14 @@ export default function PigeonDetailPage({ params }) {
       mounted = false;
     };
   }, [id]);
+
+  useEffect(() => {
+    function onKey(e) {
+      if (e.key === "Escape") setLightboxImageId(null);
+    }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, []);
 
   function updateField(field, value) {
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -267,19 +290,19 @@ export default function PigeonDetailPage({ params }) {
     }
   }
 
-  async function handleArchive() {
+  async function handleDelete() {
     if (!isAdmin || !pigeon) return;
     if (
       !confirm(
-        `Archive ${pigeon.name}? They will no longer appear in the catalog.`,
+        `Permanently delete ${pigeon.name}? This cannot be undone.`,
       )
     )
       return;
     try {
-      await archivePigeonInDb(pigeon.id);
+      await deletePigeonInDb(pigeon.id);
       router.push("/catalog");
     } catch (err) {
-      setSaveError(err?.message ?? "Failed to archive.");
+      setSaveError(err?.message ?? "Failed to delete.");
     }
   }
 
@@ -287,11 +310,134 @@ export default function PigeonDetailPage({ params }) {
     return allPigeons.find((p) => p.id === pid)?.name ?? "Unknown";
   }
 
+  // ── Image handlers ──
+  const MAX_IMAGES = 5;
+
+  function triggerUpload(isProfile, slotIndex) {
+    setUploadingProfile(isProfile);
+    setUploadingSlot(isProfile ? null : slotIndex);
+    setImageError("");
+    fileInputRef.current?.click();
+  }
+
+  async function handleFileSelected(e) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file || !pigeon) return;
+
+    const currentImages = pigeon.images ?? [];
+    if (currentImages.length >= MAX_IMAGES) {
+      setImageError("Maximum 5 images reached.");
+      return;
+    }
+
+    try {
+      const makeProfile = uploadingProfile || currentImages.length === 0;
+      const compressed = await compressImage(file);
+      const row = await uploadPigeonImage(pigeon.id, compressed, makeProfile);
+
+      setPigeon((prev) => {
+        const nextImages = makeProfile
+          ? [
+              ...prev.images.map((img) => ({ ...img, is_profile: false })),
+              {
+                id: row.id,
+                url: row.url,
+                is_profile: true,
+                sort_order: row.sort_order,
+              },
+            ]
+          : [
+              ...prev.images,
+              {
+                id: row.id,
+                url: row.url,
+                is_profile: false,
+                sort_order: row.sort_order,
+              },
+            ];
+        const profileImg = nextImages.find((img) => img.is_profile);
+        return {
+          ...prev,
+          images: nextImages,
+          imageUrl: profileImg?.url ?? nextImages[0]?.url ?? null,
+        };
+      });
+    } catch (err) {
+      setImageError(err?.message ?? "Upload failed.");
+    } finally {
+      setUploadingSlot(null);
+      setUploadingProfile(false);
+    }
+  }
+
+  async function handleSetProfile(imageId) {
+    if (!pigeon) return;
+    setImageError("");
+    try {
+      await setPigeonProfileImage(imageId, pigeon.id);
+      setPigeon((prev) => {
+        const nextImages = prev.images.map((img) => ({
+          ...img,
+          is_profile: img.id === imageId,
+        }));
+        const profileImg = nextImages.find((img) => img.is_profile);
+        return {
+          ...prev,
+          images: nextImages,
+          imageUrl: profileImg?.url ?? prev.imageUrl,
+        };
+      });
+    } catch (err) {
+      setImageError(err?.message ?? "Failed to set profile image.");
+    }
+  }
+
+  async function handleDeleteImage(imageId, imageUrl) {
+    setImageError("");
+    try {
+      const wasProfile =
+        (pigeon.images ?? []).find((img) => img.id === imageId)?.is_profile ??
+        false;
+      const remaining = (pigeon.images ?? []).filter(
+        (img) => img.id !== imageId,
+      );
+      const newProfileId =
+        wasProfile && remaining.length > 0 ? remaining[0].id : null;
+
+      await deletePigeonImage(imageId, imageUrl);
+      if (newProfileId) {
+        await setPigeonProfileImage(newProfileId, pigeon.id);
+      }
+
+      setLightboxImageId(null);
+      setPigeon((prev) => {
+        const nextImages = (prev.images ?? []).filter(
+          (img) => img.id !== imageId,
+        );
+        const updatedImages = newProfileId
+          ? nextImages.map((img) => ({
+              ...img,
+              is_profile: img.id === newProfileId,
+            }))
+          : nextImages;
+        const profileImg = updatedImages.find((img) => img.is_profile);
+        return {
+          ...prev,
+          images: updatedImages,
+          imageUrl: profileImg?.url ?? updatedImages[0]?.url ?? null,
+        };
+      });
+    } catch (err) {
+      setImageError(err?.message ?? "Failed to delete image.");
+    }
+  }
+
   // ── Render states ──
   if (loading) {
     return (
       <main className="relative min-h-screen bg-background">
-        <SimpleTopNav />
+        <TopNav />
         <div className="mx-auto flex max-w-5xl items-center justify-center gap-2 px-6 pt-32 pb-12 text-muted-foreground">
           <Loader2 className="h-5 w-5 animate-spin" />
           Loading pigeon…
@@ -303,7 +449,7 @@ export default function PigeonDetailPage({ params }) {
   if (loadError || !pigeon || !form) {
     return (
       <main className="relative min-h-screen bg-background">
-        <SimpleTopNav />
+        <TopNav />
         <div className="mx-auto max-w-5xl px-6 pt-32 pb-12">
           <Card>
             <CardContent className="p-8 text-center">
@@ -323,7 +469,7 @@ export default function PigeonDetailPage({ params }) {
 
   return (
     <main className="relative min-h-screen bg-background space-y-4">
-      <SimpleTopNav />
+      <TopNav />
 
       <header className="relative isolate grid place-items-center overflow-hidden bg-background mt-24 text-center">
         <h1 className="text-2xl font-semibold">{pigeon.name}</h1>
@@ -334,51 +480,161 @@ export default function PigeonDetailPage({ params }) {
         <section className="grid gap-6 md:grid-cols-[280px_1fr]">
           {/* Image card */}
           <Card>
-            <CardContent className="p-4 space-y-3">
-              <div className="aspect-square w-full overflow-hidden rounded-md bg-muted">
+            <CardContent className="px-4 space-y-3">
+              {/* Hidden file input */}
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={handleFileSelected}
+              />
+
+              {/* Profile image (main slot) */}
+              <div className="group relative aspect-square w-full overflow-hidden rounded-md bg-muted">
                 {pigeon.imageUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={pigeon.imageUrl}
-                    alt={pigeon.name}
-                    className="h-full w-full object-cover"
-                  />
+                  <>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={pigeon.imageUrl}
+                      alt={pigeon.name}
+                      className="h-full w-full object-cover cursor-pointer"
+                      onClick={() => {
+                        const img =
+                          (pigeon.images ?? []).find((i) => i.is_profile) ??
+                          (pigeon.images ?? [])[0];
+                        if (img) setLightboxImageId(img.id);
+                      }}
+                    />
+                    {isAdmin && (
+                      <div className="absolute inset-0 flex items-end justify-center pb-3 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+                        {(pigeon.images?.length ?? 0) < MAX_IMAGES && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              triggerUpload(true, null);
+                            }}
+                            disabled={uploadingProfile}
+                            className="pointer-events-auto flex items-center gap-1.5 rounded-full bg-black/60 px-3 py-1.5 text-xs text-white transition-colors hover:bg-black/80"
+                          >
+                            {uploadingProfile ? (
+                              <Loader2 className="size-3.5 animate-spin" />
+                            ) : (
+                              <Plus className="size-3.5" />
+                            )}
+                            Change photo
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </>
                 ) : (
-                  <div className="flex h-full w-full items-center justify-center text-muted-foreground">
-                    <PiBirdBold className="size-20 opacity-40" />
-                  </div>
+                  <>
+                    <div className="flex h-full w-full items-center justify-center text-muted-foreground">
+                      <PiBirdBold className="size-20 opacity-40" />
+                    </div>
+                    {isAdmin && (pigeon.images?.length ?? 0) < MAX_IMAGES && (
+                      <button
+                        type="button"
+                        onClick={() => triggerUpload(true, null)}
+                        disabled={uploadingProfile}
+                        className="absolute inset-0 flex flex-col items-center justify-center gap-1 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity text-white text-xs"
+                      >
+                        {uploadingProfile ? (
+                          <Loader2 className="size-6 animate-spin" />
+                        ) : (
+                          <>
+                            <Plus className="size-6" />
+                            Upload photo
+                          </>
+                        )}
+                      </button>
+                    )}
+                  </>
                 )}
               </div>
 
-              {/* Thumbnails */}
-              <div className="grid grid-cols-4 gap-2">
-                {pigeon.images?.length > 0
-                  ? pigeon.images.map((img) => (
+              {/* Additional image thumbnails (up to 4) */}
+              <div className="grid grid-cols-2 gap-2">
+                {Array.from({ length: 4 }).map((_, i) => {
+                  const nonProfile = (pigeon.images ?? []).filter(
+                    (img) => !img.is_profile,
+                  );
+                  const img = nonProfile[i];
+
+                  if (img) {
+                    return (
                       <div
                         key={img.id}
-                        className="aspect-square overflow-hidden rounded bg-muted"
+                        className="group relative aspect-square overflow-hidden rounded bg-muted"
                       >
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img
                           src={img.url}
                           alt=""
-                          className="h-full w-full object-cover"
+                          className="h-full w-full object-cover cursor-pointer"
+                          onClick={() => setLightboxImageId(img.id)}
                         />
+                        {isAdmin && (
+                          <div className="absolute inset-0 flex items-center justify-center gap-1 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+                            <button
+                              type="button"
+                              onClick={() => handleSetProfile(img.id)}
+                              title="Set as profile"
+                              className="pointer-events-auto rounded bg-white/20 p-1 text-white hover:bg-white/40"
+                            >
+                              <Star className="size-3" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteImage(img.id, img.url)}
+                              title="Delete"
+                              className="pointer-events-auto rounded bg-white/20 p-1 text-white hover:bg-red-500/80"
+                            >
+                              <Trash2 className="size-3" />
+                            </button>
+                          </div>
+                        )}
                       </div>
-                    ))
-                  : Array.from({ length: 4 }).map((_, i) => (
-                      <div
-                        key={i}
-                        className="flex aspect-square items-center justify-center rounded border border-dashed border-muted-foreground/20 text-muted-foreground/30"
-                      >
+                    );
+                  }
+
+                  const canUpload =
+                    isAdmin && (pigeon.images?.length ?? 0) < MAX_IMAGES;
+                  return (
+                    <div
+                      key={i}
+                      className={`flex aspect-square items-center justify-center rounded border border-dashed text-muted-foreground/40 ${
+                        canUpload
+                          ? "border-muted-foreground/30 hover:border-primary/50 hover:text-primary/60 cursor-pointer transition-colors"
+                          : "border-muted-foreground/20"
+                      }`}
+                      onClick={
+                        canUpload ? () => triggerUpload(false, i) : undefined
+                      }
+                    >
+                      {canUpload && uploadingSlot === i ? (
+                        <Loader2 className="size-4 animate-spin" />
+                      ) : canUpload ? (
+                        <Plus className="size-4" />
+                      ) : (
                         <ImageIcon className="size-4" />
-                      </div>
-                    ))}
+                      )}
+                    </div>
+                  );
+                })}
               </div>
 
-              <p className="text-center text-[11px] text-muted-foreground">
-                Image uploads coming soon
-              </p>
+              {imageError && (
+                <p className="text-xs text-red-600">{imageError}</p>
+              )}
+
+              {isAdmin && (
+                <p className="text-center text-[11px] text-muted-foreground">
+                  Tap photo to view · hover for options
+                </p>
+              )}
             </CardContent>
           </Card>
 
@@ -406,7 +662,7 @@ export default function PigeonDetailPage({ params }) {
                     onValueChange={(v) => updateField("status", v)}
                     disabled={!isAdmin}
                   >
-                    <SelectTrigger>
+                    <SelectTrigger className="w-full">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -469,7 +725,7 @@ export default function PigeonDetailPage({ params }) {
                     onValueChange={(v) => updateField("sex", v)}
                     disabled={!isAdmin}
                   >
-                    <SelectTrigger>
+                    <SelectTrigger className="w-full">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -500,7 +756,7 @@ export default function PigeonDetailPage({ params }) {
                     onValueChange={(v) => updateField("bandColor", v)}
                     disabled={!isAdmin}
                   >
-                    <SelectTrigger>
+                    <SelectTrigger className="w-full">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -527,7 +783,7 @@ export default function PigeonDetailPage({ params }) {
                     }
                     disabled={!isAdmin}
                   >
-                    <SelectTrigger>
+                    <SelectTrigger className="w-full">
                       <SelectValue>
                         {form.parentOneId
                           ? getPigeonName(form.parentOneId)
@@ -556,7 +812,7 @@ export default function PigeonDetailPage({ params }) {
                     }
                     disabled={!isAdmin}
                   >
-                    <SelectTrigger>
+                    <SelectTrigger className="w-full">
                       <SelectValue>
                         {form.parentTwoId
                           ? getPigeonName(form.parentTwoId)
@@ -605,10 +861,10 @@ export default function PigeonDetailPage({ params }) {
                       variant="outline"
                       size="sm"
                       className="text-destructive hover:text-destructive"
-                      onClick={handleArchive}
+                      onClick={handleDelete}
                     >
-                      <Archive className="mr-1.5 h-3.5 w-3.5" />
-                      Archive
+                      <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+                      Delete
                     </Button>
 
                     <div className="flex items-center gap-3">
@@ -654,6 +910,13 @@ export default function PigeonDetailPage({ params }) {
             <CardTitle className="flex items-center gap-2 text-base">
               <PlaneTakeoff className="h-4 w-4" />
               Flights ({myFlights.length})
+              <Link
+                href="/flights"
+                className="text-muted-foreground hover:text-primary transition-colors"
+                title="Go to Flights page"
+              >
+                <ExternalLink className="h-3.5 w-3.5" />
+              </Link>
             </CardTitle>
             {flightStats && (
               <span className="text-xs text-muted-foreground">
@@ -721,6 +984,64 @@ export default function PigeonDetailPage({ params }) {
           </CardContent>
         </Card>
       </div>
+
+      {/* Lightbox */}
+      {lightboxImageId &&
+        (() => {
+          const lbImg = (pigeon.images ?? []).find(
+            (img) => img.id === lightboxImageId,
+          );
+          if (!lbImg) return null;
+          return (
+            <div
+              className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-black/85 p-4"
+              onClick={() => setLightboxImageId(null)}
+            >
+              <button
+                type="button"
+                onClick={() => setLightboxImageId(null)}
+                className="absolute top-4 right-4 rounded-full bg-white/15 p-2 text-white hover:bg-white/30 transition-colors"
+              >
+                <X className="size-5" />
+              </button>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={lbImg.url}
+                alt=""
+                className="max-h-[72vh] max-w-full rounded object-contain"
+                onClick={(e) => e.stopPropagation()}
+              />
+              {isAdmin && (
+                <div
+                  className="mt-5 flex gap-3"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  {!lbImg.is_profile && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        handleSetProfile(lbImg.id);
+                        setLightboxImageId(null);
+                      }}
+                      className="flex items-center gap-2 rounded-full bg-white/15 px-4 py-2 text-sm text-white hover:bg-white/30 transition-colors"
+                    >
+                      <Star className="size-4" />
+                      Set as profile
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteImage(lbImg.id, lbImg.url)}
+                    className="flex items-center gap-2 rounded-full bg-white/15 px-4 py-2 text-sm text-white hover:bg-red-500/70 transition-colors"
+                  >
+                    <Trash2 className="size-4" />
+                    Delete
+                  </button>
+                </div>
+              )}
+            </div>
+          );
+        })()}
     </main>
   );
 }

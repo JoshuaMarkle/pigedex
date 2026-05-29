@@ -9,6 +9,7 @@ import {
   Plus,
   ListFilter,
   Pencil,
+  Map,
 } from "lucide-react";
 
 import {
@@ -18,9 +19,14 @@ import {
   deleteFlight,
   updateFlight,
   updateFlightPigeon,
+  addPigeonToFlight,
+  removePigeonFromFlight,
 } from "@/lib/flightDb";
 import { fetchPigeonsWithParents, updatePigeonInDb } from "@/lib/pigeonDb";
-import { getIsCoopAdmin } from "@/lib/auth";
+import {
+  returnedAtToDurationSeconds,
+  formatSecondsAsDuration,
+} from "@/lib/durationUtils";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -31,14 +37,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
-import FlightsTopNav from "@/components/flights/FlightsTopNav";
+import TopNav from "@/components/TopNav";
 import NewFlightDialog from "@/components/dialogs/NewFlightDialog";
-import FlightSettingsDialog from "@/components/dialogs/FlightSettingsDialog";
 import EditFlightDialog from "@/components/dialogs/EditFlightDialog";
 
 // Leaflet map — client-side only.
-// isolation: isolate on the wrapper scopes Leaflet's high z-indices so they
-// don't paint over shadcn dialogs (which portal to <body> with z-index: 50).
 const FlightMap = dynamic(() => import("@/components/flights/FlightMap"), {
   ssr: false,
   loading: () => <div className="h-full w-full bg-muted" />,
@@ -137,12 +140,6 @@ function FlightRow({
       {/* Expanded detail when active */}
       {isActive && (
         <div className="px-4 pt-2 pb-3 space-y-2 border-t bg-blue-50/60">
-          {/* {flight.releaseLat != null && ( */}
-          {/*   <p className="text-xs font-mono text-muted-foreground"> */}
-          {/*     {flight.releaseLat.toFixed(4)}°, {flight.releaseLng.toFixed(4)}° */}
-          {/*   </p> */}
-          {/* )} */}
-
           {flight.pigeons?.length > 0 && (
             <div className="space-y-1">
               {flight.pigeons.map((fp) => {
@@ -153,15 +150,29 @@ function FlightRow({
                     : fp.result === "lost"
                       ? "text-red-500"
                       : "text-muted-foreground";
+                const durationSec = returnedAtToDurationSeconds(
+                  flight.flightDate,
+                  fp.returnedAt,
+                );
+                const durationStr = durationSec
+                  ? formatSecondsAsDuration(durationSec)
+                  : null;
                 return (
                   <div
                     key={fp.id}
                     className="flex items-center justify-between text-xs"
                   >
                     <span>{pig?.name ?? "Unknown"}</span>
-                    <span className={`capitalize ${resultColor}`}>
-                      {fp.result}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      {durationStr && (
+                        <span className="text-muted-foreground font-mono">
+                          {durationStr}
+                        </span>
+                      )}
+                      <span className={`capitalize ${resultColor}`}>
+                        {fp.result}
+                      </span>
+                    </div>
                   </div>
                 );
               })}
@@ -209,13 +220,112 @@ function FlightRow({
   );
 }
 
+// ── Shared flight list panel ──────────────────────────────────────────────────
+
+function FlightListPanel({
+  loading,
+  loadError,
+  visibleFlights,
+  statusFilter,
+  setStatusFilter,
+  activeFlight,
+  setActiveFlight,
+  isAdmin,
+  pigeons,
+  distanceUnit,
+  onEdit,
+  onDelete,
+  onAddFlight,
+}) {
+  return (
+    <div className="flex flex-col h-full">
+      {/* Header */}
+      <div className="px-4 py-2 flex items-center justify-between gap-2 border-b shrink-0">
+        <div className="flex flex-1 items-center gap-2">
+          <span className="font-semibold text-sm">Flights</span>
+          {isAdmin && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onAddFlight}
+              className="text-muted-foreground hover:text-primary transition-colors"
+              title="Log a flight"
+            >
+              <Plus className="size-4" />
+            </Button>
+          )}
+        </div>
+        <div className="flex items-center gap-1">
+          <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <SelectTrigger className="h-8 text-xs border-0 shadow-none focus:ring-0 bg-transparent w-[100px] pr-0 *:data-[slot=select-value]:justify-end">
+              <SelectValue placeholder="All statuses" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All statuses</SelectItem>
+              <SelectItem value="active">Active</SelectItem>
+              <SelectItem value="completed">Completed</SelectItem>
+              <SelectItem value="planned">Planned</SelectItem>
+              <SelectItem value="cancelled">Cancelled</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+
+      {/* List */}
+      <div className="flex-1 overflow-y-auto">
+        {loading ? (
+          <div className="flex items-center justify-center gap-2 p-8 text-sm text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Loading…
+          </div>
+        ) : loadError ? (
+          <p className="p-4 text-sm text-red-600">{loadError}</p>
+        ) : visibleFlights.length === 0 ? (
+          <div className="p-8 text-center">
+            <PlaneTakeoff className="mx-auto mb-2 h-7 w-7 text-muted-foreground" />
+            <p className="text-sm text-muted-foreground">
+              {statusFilter === "all"
+                ? "No flights logged yet."
+                : `No ${statusFilter} flights.`}
+            </p>
+            {isAdmin && statusFilter === "all" && (
+              <Button size="sm" className="mt-3" onClick={onAddFlight}>
+                <Plus className="mr-1.5 h-3.5 w-3.5" />
+                Log first flight
+              </Button>
+            )}
+          </div>
+        ) : (
+          <div className="divide-y">
+            {visibleFlights.map((flight) => (
+              <FlightRow
+                key={flight.id}
+                flight={flight}
+                distanceUnit={distanceUnit}
+                isActive={flight.id === activeFlight}
+                isAdmin={isAdmin}
+                pigeons={pigeons}
+                onClick={() =>
+                  setActiveFlight(flight.id === activeFlight ? null : flight.id)
+                }
+                onEdit={onEdit}
+                onDelete={onDelete}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function FlightsPage() {
   const [flights, setFlights] = useState([]);
   const [pigeons, setPigeons] = useState([]);
   const [coopSettings, setCoopSettings] = useState(null);
-  const [isAdmin, setIsAdmin] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(null); // null = unknown, false = not admin, true = admin
 
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
@@ -224,8 +334,20 @@ export default function FlightsPage() {
   const [activeFlight, setActiveFlight] = useState(null);
 
   const [flightDialogOpen, setFlightDialogOpen] = useState(false);
-  const [settingsDialogOpen, setSettingsDialogOpen] = useState(false);
-  const [editFlightId, setEditFlightId] = useState(null); // id of flight being edited
+  const [editFlightId, setEditFlightId] = useState(null);
+
+  // Mobile detection
+  const [isMobile, setIsMobile] = useState(false);
+  const [activeTab, setActiveTab] = useState("flights");
+
+  useEffect(() => {
+    function check() {
+      setIsMobile(window.innerWidth < 768);
+    }
+    check();
+    window.addEventListener("resize", check);
+    return () => window.removeEventListener("resize", check);
+  }, []);
 
   // ── Load ──
   useEffect(() => {
@@ -236,19 +358,16 @@ export default function FlightsPage() {
         setLoading(true);
         setLoadError("");
 
-        const [loadedFlights, loadedPigeons, settings, adminStatus] =
-          await Promise.all([
-            fetchFlightsWithPigeons(),
-            fetchPigeonsWithParents(),
-            fetchCoopSettings(),
-            getIsCoopAdmin().catch(() => false),
-          ]);
+        const [loadedFlights, loadedPigeons, settings] = await Promise.all([
+          fetchFlightsWithPigeons(),
+          fetchPigeonsWithParents(),
+          fetchCoopSettings(),
+        ]);
 
         if (!mounted) return;
         setFlights(loadedFlights);
         setPigeons(loadedPigeons);
         setCoopSettings(settings);
-        setIsAdmin(adminStatus);
 
         if (loadedFlights.length > 0) {
           setActiveFlight(loadedFlights[0].id);
@@ -287,7 +406,6 @@ export default function FlightsPage() {
   async function handleCreateFlight(flightData) {
     const created = await createFlight(flightData);
 
-    // Optionally set selected pigeons to "flying" in the pigeons table
     if (flightData.setPigeonsFlying && flightData.pigeonIds?.length > 0) {
       await Promise.all(
         flightData.pigeonIds.map((id) =>
@@ -312,11 +430,14 @@ export default function FlightsPage() {
     if (activeFlight === id) setActiveFlight(null);
   }
 
-  async function handleSaveFlight(flightId, flightUpdates, pigeonUpdates) {
-    // Persist flight-level changes
+  async function handleSaveFlight(
+    flightId,
+    flightUpdates,
+    pigeonUpdates,
+    { addPigeonIds = [], removePigeonIds = [] } = {},
+  ) {
     await updateFlight(flightId, flightUpdates);
 
-    // Persist per-pigeon result + returnedAt
     if (pigeonUpdates.length > 0) {
       await Promise.all(
         pigeonUpdates.map((u) =>
@@ -328,26 +449,30 @@ export default function FlightsPage() {
       );
     }
 
-    // Reflect in local state
+    await Promise.all(removePigeonIds.map(removePigeonFromFlight));
+
+    const newPigeons = await Promise.all(
+      addPigeonIds.map((pigeonId) => addPigeonToFlight(flightId, pigeonId)),
+    );
+
     setFlights((prev) =>
       prev.map((f) => {
         if (f.id !== flightId) return f;
-        return {
-          ...f,
-          ...flightUpdates,
-          pigeons: f.pigeons.map((fp) => {
+        const updatedExisting = f.pigeons
+          .filter((fp) => !removePigeonIds.includes(fp.id))
+          .map((fp) => {
             const upd = pigeonUpdates.find((u) => u.id === fp.id);
             return upd
               ? { ...fp, result: upd.result, returnedAt: upd.returnedAt }
               : fp;
-          }),
+          });
+        return {
+          ...f,
+          ...flightUpdates,
+          pigeons: [...updatedExisting, ...newPigeons],
         };
       }),
     );
-  }
-
-  function handleSettingsSave(newSettings) {
-    setCoopSettings(newSettings);
   }
 
   const editFlight = useMemo(
@@ -355,108 +480,9 @@ export default function FlightsPage() {
     [flights, editFlightId],
   );
 
-  return (
-    <div className="relative h-screen overflow-hidden">
-      {/* ── Full-screen map background ─────────────────────────────────────
-          isolation: isolate creates a new stacking context that scopes all
-          Leaflet internal z-indices (up to 1000) so they cannot escape and
-          paint over dialogs that are portalled to <body> at z-index: 50.  */}
-      <div className="absolute inset-0" style={{ isolation: "isolate" }}>
-        <FlightMap
-          homeLocation={homeLocation}
-          flights={visibleFlights}
-          activeFlight={activeFlight}
-          distanceUnit={distanceUnit}
-        />
-      </div>
-
-      {/* ── Top nav ── */}
-      <FlightsTopNav
-        isAdmin={isAdmin}
-        onOpenSettings={() => setSettingsDialogOpen(true)}
-        onAddFlight={() => setFlightDialogOpen(true)}
-      />
-
-      {/* ── Left floating sidebar ─────────────────────────────────────────── */}
-      <aside className="absolute left-4 top-4 bottom-4 z-10 flex w-80 flex-col gap-2">
-        {/* Flight list */}
-        <div className="flex-1 overflow-y-auto rounded-xl bg-white/90 shadow-md ring-2 ring-ring backdrop-blur min-h-0">
-          <div className="p-0 px-4 flex row items-center text-sm border-b">
-            <ListFilter className="size-3 text-muted-foreground" />
-            <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="h-8 text-sm border-0 shadow-none focus:ring-0 bg-transparent">
-                <SelectValue placeholder="All statuses" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All statuses</SelectItem>
-                <SelectItem value="active">Active</SelectItem>
-                <SelectItem value="completed">Completed</SelectItem>
-                <SelectItem value="planned">Planned</SelectItem>
-                <SelectItem value="cancelled">Cancelled</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          {loading ? (
-            <div className="flex items-center justify-center gap-2 p-8 text-sm text-muted-foreground">
-              <Loader2 className="h-4 w-4 animate-spin" />
-              Loading…
-            </div>
-          ) : loadError ? (
-            <p className="p-4 text-sm text-red-600">{loadError}</p>
-          ) : visibleFlights.length === 0 ? (
-            <div className="p-8 text-center">
-              <PlaneTakeoff className="mx-auto mb-2 h-7 w-7 text-muted-foreground" />
-              <p className="text-sm text-muted-foreground">
-                {statusFilter === "all"
-                  ? "No flights logged yet."
-                  : `No ${statusFilter} flights.`}
-              </p>
-              {isAdmin && statusFilter === "all" && (
-                <Button
-                  size="sm"
-                  className="mt-3"
-                  onClick={() => setFlightDialogOpen(true)}
-                >
-                  <Plus className="mr-1.5 h-3.5 w-3.5" />
-                  Log first flight
-                </Button>
-              )}
-            </div>
-          ) : (
-            <div className="divide-y">
-              {visibleFlights.map((flight) => (
-                <FlightRow
-                  key={flight.id}
-                  flight={flight}
-                  distanceUnit={distanceUnit}
-                  isActive={flight.id === activeFlight}
-                  isAdmin={isAdmin}
-                  pigeons={pigeons}
-                  onClick={() =>
-                    setActiveFlight(
-                      flight.id === activeFlight ? null : flight.id,
-                    )
-                  }
-                  onEdit={(id) => setEditFlightId(id)}
-                  onDelete={handleDeleteFlight}
-                />
-              ))}
-            </div>
-          )}
-        </div>
-        {/* Home not set warning */}
-        {!loading && !homeLocation && (
-          <div
-            className="shrink-0 cursor-pointer rounded-lg bg-amber-50/90 px-3 py-2 text-xs text-amber-700 shadow ring-2 ring-amber-200 backdrop-blur"
-            onClick={() => setSettingsDialogOpen(true)}
-          >
-            ⚠ Home location not set — click to configure.
-          </div>
-        )}
-      </aside>
-
-      {/* ── Dialogs ── */}
+  // Shared props for dialogs
+  const dialogs = (
+    <>
       <NewFlightDialog
         open={flightDialogOpen}
         onOpenChange={setFlightDialogOpen}
@@ -465,15 +491,6 @@ export default function FlightsPage() {
         pigeons={pigeons.filter((p) => p.status !== "lost")}
         onCreate={handleCreateFlight}
       />
-
-      <FlightSettingsDialog
-        open={settingsDialogOpen}
-        onOpenChange={setSettingsDialogOpen}
-        coopSettings={coopSettings}
-        isAdmin={isAdmin}
-        onSave={handleSettingsSave}
-      />
-
       <EditFlightDialog
         open={editFlightId !== null}
         onOpenChange={(open) => {
@@ -484,6 +501,132 @@ export default function FlightsPage() {
         distanceUnit={distanceUnit}
         onSave={handleSaveFlight}
       />
+    </>
+  );
+
+  // Shared list panel props
+  const listPanelProps = {
+    loading,
+    loadError,
+    visibleFlights,
+    statusFilter,
+    setStatusFilter,
+    activeFlight,
+    setActiveFlight,
+    isAdmin,
+    pigeons,
+    distanceUnit,
+    onEdit: (id) => setEditFlightId(id),
+    onDelete: handleDeleteFlight,
+    onAddFlight: () => setFlightDialogOpen(true),
+  };
+
+  // ── Mobile layout ──
+  if (isMobile) {
+    return (
+      <div className="flex flex-col h-screen bg-background">
+        <TopNav
+          onAdd={() => setFlightDialogOpen(true)}
+          onAdminChange={setIsAdmin}
+          onSettingsChange={setCoopSettings}
+        />
+
+        {/* Tab bar */}
+        <div className="absolute top-[74px] left-0 right-0 z-10 flex border-b bg-white/95 backdrop-blur shrink-0">
+          <button
+            type="button"
+            className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 text-sm font-medium transition-colors ${
+              activeTab === "flights"
+                ? "text-primary border-b-2 border-primary"
+                : "text-muted-foreground"
+            }`}
+            onClick={() => setActiveTab("flights")}
+          >
+            <PlaneTakeoff className="size-4" />
+            Flights
+          </button>
+          <button
+            type="button"
+            className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 text-sm font-medium transition-colors ${
+              activeTab === "map"
+                ? "text-primary border-b-2 border-primary"
+                : "text-muted-foreground"
+            }`}
+            onClick={() => setActiveTab("map")}
+          >
+            <Map className="size-4" />
+            Map
+          </button>
+        </div>
+
+        {/* Content area — offset for nav + tab bar */}
+        <div className="absolute inset-0 top-[116px]">
+          {activeTab === "flights" ? (
+            <div className="h-full bg-white overflow-hidden">
+              <FlightListPanel {...listPanelProps} />
+            </div>
+          ) : (
+            <div className="h-full" style={{ isolation: "isolate" }}>
+              <FlightMap
+                homeLocation={homeLocation}
+                flights={visibleFlights}
+                activeFlight={activeFlight}
+                distanceUnit={distanceUnit}
+              />
+            </div>
+          )}
+        </div>
+
+        {/* Home not set warning (mobile flights tab) */}
+        {!loading && !homeLocation && activeTab === "flights" && (
+          <div
+            className="absolute bottom-4 left-4 right-4 z-20 cursor-pointer rounded-lg bg-amber-50/90 px-3 py-2 text-xs text-amber-700 shadow ring-2 ring-amber-200 backdrop-blur"
+            onClick={() => setSettingsDialogOpen(true)}
+          >
+            ⚠ Home location not set — click to configure.
+          </div>
+        )}
+
+        {dialogs}
+      </div>
+    );
+  }
+
+  // ── Desktop layout ──
+  return (
+    <div className="relative h-screen overflow-hidden">
+      {/* Full-screen map background */}
+      <div className="absolute inset-0" style={{ isolation: "isolate" }}>
+        <FlightMap
+          homeLocation={homeLocation}
+          flights={visibleFlights}
+          activeFlight={activeFlight}
+          distanceUnit={distanceUnit}
+        />
+      </div>
+
+      {/* Top nav */}
+      <TopNav
+        onAdd={() => setFlightDialogOpen(true)}
+        onAdminChange={setIsAdmin}
+        onSettingsChange={setCoopSettings}
+      />
+
+      {/* Left floating sidebar */}
+      <aside className="absolute left-4 top-4 bottom-4 z-10 flex w-80 flex-col gap-2">
+        <div className="flex-1 overflow-hidden rounded-xl bg-white/90 shadow-md ring-2 ring-ring backdrop-blur min-h-0">
+          <FlightListPanel {...listPanelProps} />
+        </div>
+
+        {/* Home not set warning */}
+        {!loading && !homeLocation && (
+          <div className="shrink-0 rounded-lg bg-amber-50/90 px-3 py-2 text-xs text-amber-700 shadow ring-2 ring-amber-200 backdrop-blur">
+            ⚠ Home location not set — use the ⚙ button above to configure.
+          </div>
+        )}
+      </aside>
+
+      {dialogs}
     </div>
   );
 }

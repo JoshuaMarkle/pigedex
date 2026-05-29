@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { X, Plus } from "lucide-react";
 
 import {
   parseDurationToSeconds,
@@ -37,17 +38,24 @@ export default function EditFlightDialog({
   flight, // { id, flightDate, status, locationName, notes, pigeons: [{id, pigeonId, result, returnedAt}] }
   pigeons, // full pigeon objects (for name lookup)
   distanceUnit,
-  onSave, // async (flightId, flightUpdates, pigeonUpdates) => void
+  onSave, // async (flightId, flightUpdates, pigeonUpdates, { addPigeonIds, removePigeonIds }) => void
 }) {
   const [status, setStatus] = useState("active");
   const [locationName, setLocationName] = useState("");
   const [notes, setNotes] = useState("");
+  // Existing pigeon rows (from DB)
   const [pigeonRows, setPigeonRows] = useState([]);
+  // IDs of flight_pigeons to remove
+  const [removedIds, setRemovedIds] = useState([]);
+  // Pigeon IDs newly added in this edit session (not yet in DB)
+  const [addedPigeonIds, setAddedPigeonIds] = useState([]);
+  // Currently selected pigeon in the "add" dropdown
+  const [addPickerId, setAddPickerId] = useState("");
+
   const [autoCompleted, setAutoCompleted] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
 
-  // Prevent auto-complete from firing during initial population
   const allowAutoComplete = useRef(false);
 
   // ── Initialise from flight ──
@@ -60,6 +68,9 @@ export default function EditFlightDialog({
     setNotes(flight.notes ?? "");
     setAutoCompleted(false);
     setSaveError("");
+    setRemovedIds([]);
+    setAddedPigeonIds([]);
+    setAddPickerId("");
 
     const rows = (flight.pigeons ?? []).map((fp) => {
       const durationSec = returnedAtToDurationSeconds(
@@ -75,7 +86,6 @@ export default function EditFlightDialog({
     });
     setPigeonRows(rows);
 
-    // Allow auto-complete from next tick onwards
     requestAnimationFrame(() => {
       allowAutoComplete.current = true;
     });
@@ -84,11 +94,14 @@ export default function EditFlightDialog({
   // ── Auto-complete status when all pigeons are resolved ──
   useEffect(() => {
     if (!allowAutoComplete.current) return;
-    if (pigeonRows.length === 0) return;
+    const activeExisting = pigeonRows.filter((r) => !removedIds.includes(r.id));
+    const total = activeExisting.length + addedPigeonIds.length;
+    if (total === 0) return;
 
-    const allResolved = pigeonRows.every(
+    // Newly-added pigeons default to "unknown", so won't trigger auto-complete
+    const allResolved = activeExisting.every(
       (r) => r.result === "returned" || r.result === "lost",
-    );
+    ) && addedPigeonIds.length === 0;
 
     setStatus((prev) => {
       if (allResolved && prev !== "completed" && prev !== "cancelled") {
@@ -97,13 +110,12 @@ export default function EditFlightDialog({
       }
       return prev;
     });
-  }, [pigeonRows]);
+  }, [pigeonRows, removedIds, addedPigeonIds]);
 
   function updatePigeonRow(id, field, value) {
     setPigeonRows((prev) =>
       prev.map((r) => (r.id === id ? { ...r, [field]: value } : r)),
     );
-    // If a result goes back to unknown, dismiss the auto-complete note
     if (field === "result" && value === "unknown") {
       setAutoCompleted(false);
     }
@@ -114,6 +126,24 @@ export default function EditFlightDialog({
     setAutoCompleted(false);
   }
 
+  function handleRemoveExisting(fpId) {
+    setRemovedIds((prev) => [...prev, fpId]);
+    setAutoCompleted(false);
+  }
+
+  function handleRemoveAdded(pigeonId) {
+    setAddedPigeonIds((prev) => prev.filter((id) => id !== pigeonId));
+    setAutoCompleted(false);
+  }
+
+  function handleAddPigeon() {
+    if (!addPickerId) return;
+    if (addedPigeonIds.includes(addPickerId)) return;
+    setAddedPigeonIds((prev) => [...prev, addPickerId]);
+    setAddPickerId("");
+    setAutoCompleted(false);
+  }
+
   // ── Save ──
   async function handleSave(e) {
     e.preventDefault();
@@ -121,8 +151,9 @@ export default function EditFlightDialog({
     setSaveError("");
 
     try {
-      // Validate durations
-      for (const row of pigeonRows) {
+      const activeRows = pigeonRows.filter((r) => !removedIds.includes(r.id));
+
+      for (const row of activeRows) {
         const trimmed = row.durationStr.trim();
         if (trimmed && parseDurationToSeconds(trimmed) === null) {
           const pig = pigeons?.find((p) => p.id === row.pigeonId);
@@ -138,7 +169,7 @@ export default function EditFlightDialog({
         notes: notes.trim(),
       };
 
-      const pigeonUpdates = pigeonRows.map((row) => {
+      const pigeonUpdates = activeRows.map((row) => {
         const durationSec = parseDurationToSeconds(row.durationStr);
         return {
           id: row.id,
@@ -147,7 +178,10 @@ export default function EditFlightDialog({
         };
       });
 
-      await onSave(flight.id, flightUpdates, pigeonUpdates);
+      await onSave(flight.id, flightUpdates, pigeonUpdates, {
+        addPigeonIds: addedPigeonIds,
+        removePigeonIds: removedIds,
+      });
       onOpenChange(false);
     } catch (err) {
       setSaveError(err?.message ?? "Failed to save.");
@@ -164,13 +198,30 @@ export default function EditFlightDialog({
     return "text-muted-foreground";
   };
 
+  // Pigeon IDs currently on this flight (existing not-removed + newly added)
+  const activePigeonIds = new Set([
+    ...pigeonRows
+      .filter((r) => !removedIds.includes(r.id))
+      .map((r) => r.pigeonId),
+    ...addedPigeonIds,
+  ]);
+
+  // Pigeons available to add
+  const availableToAdd = (pigeons ?? []).filter(
+    (p) => !activePigeonIds.has(p.id),
+  );
+
+  const activeRowCount =
+    pigeonRows.filter((r) => !removedIds.includes(r.id)).length +
+    addedPigeonIds.length;
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[540px] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Edit flight</DialogTitle>
           <DialogDescription>
-            Update flight status and individual pigeon results.
+            Update flight status, pigeon results, and participating birds.
           </DialogDescription>
         </DialogHeader>
 
@@ -211,33 +262,32 @@ export default function EditFlightDialog({
           )}
 
           {/* Pigeon rows */}
-          {pigeonRows.length > 0 && (
-            <>
-              <Separator />
-              <div className="space-y-2">
-                <div className="flex items-baseline justify-between">
-                  <Label>Pigeons</Label>
-                  <span className="text-xs text-muted-foreground font-mono">
-                    name · result · flight time
-                  </span>
-                </div>
+          <Separator />
+          <div className="space-y-2">
+            <div className="flex items-baseline justify-between">
+              <Label>Pigeons</Label>
+              <span className="text-xs text-muted-foreground font-mono">
+                name · result · flight time
+              </span>
+            </div>
 
-                <div className="rounded-md border divide-y overflow-hidden">
-                  {pigeonRows.map((row) => {
+            {activeRowCount > 0 ? (
+              <div className="rounded-md border divide-y overflow-hidden">
+                {/* Existing rows */}
+                {pigeonRows
+                  .filter((r) => !removedIds.includes(r.id))
+                  .map((row) => {
                     const pig = pigeons?.find((p) => p.id === row.pigeonId);
                     return (
                       <div
                         key={row.id}
                         className="flex items-center gap-2 px-3 py-2"
                       >
-                        {/* Name */}
                         <span
-                          className={`w-28 shrink-0 truncate text-sm font-medium ${resultClass(row.result)}`}
+                          className={`w-24 shrink-0 truncate text-sm font-medium ${resultClass(row.result)}`}
                         >
                           {pig?.name ?? "Unknown"}
                         </span>
-
-                        {/* Result */}
                         <Select
                           value={row.result}
                           onValueChange={(v) =>
@@ -253,34 +303,96 @@ export default function EditFlightDialog({
                             <SelectItem value="lost">Lost</SelectItem>
                           </SelectContent>
                         </Select>
-
-                        {/* Flight time */}
                         <Input
                           className="h-8 min-w-0 flex-1 font-mono text-xs"
                           value={row.durationStr}
                           onChange={(e) =>
-                            updatePigeonRow(
-                              row.id,
-                              "durationStr",
-                              e.target.value,
-                            )
+                            updatePigeonRow(row.id, "durationStr", e.target.value)
                           }
                           placeholder="1h 30m"
                           title="Flight time — format: 1d 2h 30m 15s"
                           disabled={row.result === "unknown"}
                         />
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveExisting(row.id)}
+                          className="shrink-0 text-muted-foreground hover:text-destructive transition-colors"
+                          title="Remove from flight"
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </button>
                       </div>
                     );
                   })}
-                </div>
 
-                <p className="text-xs text-muted-foreground">
-                  Flight time format:{" "}
-                  <span className="font-mono">1d 2h 30m 15s</span>
-                </p>
+                {/* Newly added rows */}
+                {addedPigeonIds.map((pigeonId) => {
+                  const pig = pigeons?.find((p) => p.id === pigeonId);
+                  return (
+                    <div
+                      key={pigeonId}
+                      className="flex items-center gap-2 px-3 py-2 bg-blue-50/40"
+                    >
+                      <span className="w-24 shrink-0 truncate text-sm font-medium text-muted-foreground">
+                        {pig?.name ?? "Unknown"}
+                      </span>
+                      <span className="w-28 shrink-0 text-xs text-muted-foreground italic">
+                        Will be added
+                      </span>
+                      <span className="flex-1" />
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveAdded(pigeonId)}
+                        className="shrink-0 text-muted-foreground hover:text-destructive transition-colors"
+                        title="Cancel add"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  );
+                })}
               </div>
-            </>
-          )}
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                No pigeons on this flight.
+              </p>
+            )}
+
+            <p className="text-xs text-muted-foreground">
+              Flight time format:{" "}
+              <span className="font-mono">1d 2h 30m 15s</span>
+            </p>
+
+            {/* Add pigeon */}
+            {availableToAdd.length > 0 && (
+              <div className="flex items-center gap-2">
+                <Select value={addPickerId} onValueChange={setAddPickerId}>
+                  <SelectTrigger className="h-8 text-xs flex-1">
+                    <SelectValue placeholder="Add a pigeon…" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {availableToAdd.map((p) => (
+                      <SelectItem key={p.id} value={p.id}>
+                        {p.name}
+                        {p.bandId ? ` · ${p.bandId}` : ""}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-8 text-xs shrink-0"
+                  disabled={!addPickerId}
+                  onClick={handleAddPigeon}
+                >
+                  <Plus className="h-3 w-3 mr-1" />
+                  Add
+                </Button>
+              </div>
+            )}
+          </div>
 
           <Separator />
 

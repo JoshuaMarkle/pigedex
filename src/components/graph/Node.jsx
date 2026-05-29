@@ -34,12 +34,20 @@ function PigeonNode({ data }) {
         data.status,
       )}`}
     >
-      <Handle type="target" position={Position.Top} className="opacity-0" />
+      <Handle
+        type="target"
+        position={Position.Top}
+        className="opacity-0"
+        isConnectable={false}
+      />
 
       <div className="flex items-center gap-2">
         <Avatar>
-          <AvatarImage src={data.imageUrl || ""} />
-          <AvatarFallback className="border-2 border-edge!">
+          <AvatarImage
+            src={data.imageUrl || ""}
+            className="border-2 border-edge"
+          />
+          <AvatarFallback className="border-2 border-edge">
             <PiBirdBold />
           </AvatarFallback>
         </Avatar>
@@ -52,7 +60,12 @@ function PigeonNode({ data }) {
         </div>
       </div>
 
-      <Handle type="source" position={Position.Bottom} className="opacity-0" />
+      <Handle
+        type="source"
+        position={Position.Bottom}
+        className="opacity-0"
+        isConnectable={false}
+      />
     </div>
   );
 }
@@ -61,11 +74,21 @@ function PigeonNode({ data }) {
 function UnionNode() {
   return (
     <div className="relative h-2 w-2">
-      <Handle type="target" position={Position.Top} className="opacity-0" />
+      <Handle
+        type="target"
+        position={Position.Top}
+        className="opacity-0"
+        isConnectable={false}
+      />
 
       <FaDotCircle className="pointer-events-none absolute left-1/2 top-1/2 h-4 w-4 -translate-x-1/2 -translate-y-1/2 text-edge" />
 
-      <Handle type="source" position={Position.Bottom} className="opacity-0" />
+      <Handle
+        type="source"
+        position={Position.Bottom}
+        className="opacity-0"
+        isConnectable={false}
+      />
     </div>
   );
 }

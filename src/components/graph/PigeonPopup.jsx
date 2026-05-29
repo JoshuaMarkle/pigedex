@@ -1,10 +1,9 @@
 import { useState } from "react";
+import Link from "next/link";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -12,15 +11,53 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Separator } from "@/components/ui/separator";
 
 import { hasDescendant } from "@/lib/graph/graphData";
 
-// ----- Popup ----- //
+const BAND_COLOR_HEX = {
+  red: "#eb5539",
+  blue: "#1e96eb",
+  green: "#0fca88",
+  yellow: "#f59e0b",
+  orange: "#f59e0b",
+  purple: "#7a61f9",
+  white: "#f1f5f9",
+  black: "#1e293b",
+};
+
+function parseBirthday(value) {
+  if (!value) return null;
+  const parts = value.split("-");
+  if (parts.length !== 3) return null;
+  const [month, day, year] = parts.map(Number);
+  const date = new Date(year, month - 1, day);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function getAgeLabel(birthday) {
+  const birthDate = parseBirthday(birthday);
+  if (!birthDate) return "Unknown";
+
+  const msPerDay = 1000 * 60 * 60 * 24;
+  const days = Math.max(0, Math.floor((new Date() - birthDate) / msPerDay));
+
+  if (days < 14) return `${days} ${days === 1 ? "day" : "days"}`;
+  if (days < 56) {
+    const weeks = Math.floor(days / 7);
+    return `${weeks} ${weeks === 1 ? "week" : "weeks"}`;
+  }
+  if (days < 366) {
+    const months = Math.floor(days / 30);
+    return `${months} ${months === 1 ? "month" : "months"}`;
+  }
+  const years = Math.floor(days / 365);
+  const rem = Math.floor((days % 365) / 30);
+  if (rem <= 0) return `${years} ${years === 1 ? "year" : "years"}`;
+  return `${years} ${years === 1 ? "year" : "years"} ${rem} ${rem === 1 ? "month" : "months"}`;
+}
 
 export default function PigeonPopup(props) {
   if (!props.pigeon || !props.position) return null;
-
   return <PigeonPopupContent key={props.pigeon.id} {...props} />;
 }
 
@@ -35,24 +72,12 @@ function PigeonPopupContent({
 }) {
   const [draft, setDraft] = useState(pigeon);
 
-  function updateDraft(field, value) {
-    setDraft((current) => ({
-      ...current,
-      [field]: value,
-    }));
-  }
-
-  function saveField(field) {
-    if (draft[field] === pigeon[field]) return;
-    onUpdateField(pigeon.id, field, draft[field]);
-  }
-
   const parentIds = draft.parentIds || [];
   const parentOneId = parentIds[0] || "";
   const parentTwoId = parentIds[1] || "";
 
   function getPigeonNameById(id) {
-    return pigeons.find((item) => item.id === id)?.name || "Unknown";
+    return pigeons.find((p) => p.id === id)?.name || "Unknown";
   }
 
   function wouldCreateCycle(parentId) {
@@ -62,146 +87,137 @@ function PigeonPopupContent({
 
   function updateParentAtIndex(index, value) {
     const nextValue = value === "none" ? "" : value;
-
     if (nextValue && wouldCreateCycle(nextValue)) {
       alert("That parent would create a family tree loop.");
       return;
     }
-
     const nextParentIds = [...parentIds];
-
     if (nextValue) {
       nextParentIds[index] = nextValue;
     } else {
       nextParentIds.splice(index, 1);
     }
-
-    const cleanedParentIds = [...new Set(nextParentIds.filter(Boolean))];
-
-    setDraft((current) => ({
-      ...current,
-      parentIds: cleanedParentIds,
-    }));
-
-    onUpdateParents(pigeon.id, cleanedParentIds);
+    const cleaned = [...new Set(nextParentIds.filter(Boolean))];
+    setDraft((prev) => ({ ...prev, parentIds: cleaned }));
+    onUpdateParents(pigeon.id, cleaned);
   }
 
   const parentOneOptions = pigeons.filter(
-    (item) => item.id !== pigeon.id && item.id !== parentTwoId,
+    (p) => p.id !== pigeon.id && p.id !== parentTwoId,
+  );
+  const parentTwoOptions = pigeons.filter(
+    (p) => p.id !== pigeon.id && p.id !== parentOneId,
   );
 
-  const parentTwoOptions = pigeons.filter(
-    (item) => item.id !== pigeon.id && item.id !== parentOneId,
-  );
+  const bandHex =
+    pigeon.bandColor && pigeon.bandColor !== "none"
+      ? (BAND_COLOR_HEX[pigeon.bandColor] ?? null)
+      : null;
 
   return (
     <Card
-      className="absolute z-5 w-[320px] shadow-xl"
-      style={{
-        left: position.x,
-        top: position.y,
-      }}
+      className="absolute z-5 w-[300px] shadow-xl"
+      style={{ left: position.x, top: position.y }}
     >
-      <CardHeader className="flex flex-row items-start justify-between space-y-0">
-        <div>
-          <CardTitle className="text-base">
-            {draft.name || "Unnamed bird"}
+      <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-3">
+        <div className="min-w-0 flex-1 pr-2">
+          <CardTitle className="text-base leading-tight">
+            {pigeon.name || "Unnamed bird"}
           </CardTitle>
-          <p className="text-xs text-muted-foreground">
-            {draft.bandId || "Unbanded"}
-          </p>
+          <div className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
+            {bandHex && (
+              <span
+                className="h-2.5 w-2.5 shrink-0 rounded-full border border-black/10"
+                style={{ backgroundColor: bandHex }}
+              />
+            )}
+            <span>{pigeon.bandId || "Unbanded"}</span>
+          </div>
         </div>
 
-        <Button variant="outline" size="sm" onClick={onClose}>
-          Close
-        </Button>
+        <div className="flex shrink-0 items-center gap-1.5">
+          <Link href={`/pigeons/${pigeon.id}`}>
+            <Button variant="outline" size="sm">
+              Edit
+            </Button>
+          </Link>
+          <Button variant="outline" size="sm" onClick={onClose}>
+            Close
+          </Button>
+        </div>
       </CardHeader>
 
       <CardContent className="space-y-4">
-        <div className="space-y-2">
-          <Label htmlFor="pigeon-name">Name</Label>
-          <Input
-            id="pigeon-name"
-            value={draft.name || ""}
-            disabled={!isAdmin}
-            onChange={(event) => updateDraft("name", event.target.value)}
-            onBlur={() => saveField("name")}
-          />
+        {/* Age + Status */}
+        <div className="flex items-start gap-3">
+          <div className="flex-1">
+            <p className="mb-1.5 font-medium">Age</p>
+            <p className="text-sm">{getAgeLabel(pigeon.birthday)}</p>
+          </div>
+          <div className="flex-1 space-y-1.5">
+            <Label>Status</Label>
+            <Select
+              value={draft.status || "home"}
+              disabled={!isAdmin}
+              onValueChange={(status) => {
+                setDraft((prev) => ({ ...prev, status }));
+                onUpdateField(pigeon.id, "status", status);
+              }}
+            >
+              <SelectTrigger className="w-full h-8">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="home">Home</SelectItem>
+                <SelectItem value="flying">Flying</SelectItem>
+                <SelectItem value="lost">Lost</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
         </div>
 
-        <div className="space-y-2">
-          <Label htmlFor="pigeon-birthday">Birthday</Label>
-          <Input
-            id="pigeon-birthday"
-            value={draft.birthday || ""}
-            placeholder="Unknown"
-            disabled={!isAdmin}
-            onChange={(event) => updateDraft("birthday", event.target.value)}
-            onBlur={() => saveField("birthday")}
-          />
-        </div>
-
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div className="space-y-2">
+        {/* Parents */}
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-1.5">
             <Label>Parent 1</Label>
-
             <Select
               value={parentOneId || "none"}
               disabled={!isAdmin}
-              onValueChange={(value) => updateParentAtIndex(0, value)}
+              onValueChange={(v) => updateParentAtIndex(0, v)}
             >
-              <SelectTrigger>
+              <SelectTrigger className="w-full h-8">
                 <SelectValue>
                   {parentOneId ? getPigeonNameById(parentOneId) : "Unknown"}
                 </SelectValue>
               </SelectTrigger>
-
-              <SelectContent>
+              <SelectContent className="capitalize">
                 <SelectItem value="none">Unknown</SelectItem>
-
-                {parentOneOptions.map((item) => (
-                  <SelectItem key={item.id} value={item.id}>
-                    <div className="flex flex-col">
-                      <span>{item.name}</span>
-                      {/* {item.bandId ? ( */}
-                      {/*   <span className="text-xs text-muted-foreground"> */}
-                      {/*     {item.bandId} */}
-                      {/*   </span> */}
-                      {/* ) : null} */}
-                    </div>
+                {parentOneOptions.map((p) => (
+                  <SelectItem key={p.id} value={p.id}>
+                    {p.name}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </div>
 
-          <div className="space-y-2">
+          <div className="space-y-1.5">
             <Label>Parent 2</Label>
-
             <Select
               value={parentTwoId || "none"}
               disabled={!isAdmin}
-              onValueChange={(value) => updateParentAtIndex(1, value)}
+              onValueChange={(v) => updateParentAtIndex(1, v)}
             >
-              <SelectTrigger>
+              <SelectTrigger className="w-full h-8">
                 <SelectValue>
                   {parentTwoId ? getPigeonNameById(parentTwoId) : "Unknown"}
                 </SelectValue>
               </SelectTrigger>
-
-              <SelectContent>
+              <SelectContent className="capitalize">
                 <SelectItem value="none">Unknown</SelectItem>
-
-                {parentTwoOptions.map((item) => (
-                  <SelectItem key={item.id} value={item.id}>
-                    <div className="flex flex-col">
-                      <span>{item.name}</span>
-                      {/* {item.bandId ? ( */}
-                      {/*   <span className="text-xs text-muted-foreground"> */}
-                      {/*     {item.bandId} */}
-                      {/*   </span> */}
-                      {/* ) : null} */}
-                    </div>
+                {parentTwoOptions.map((p) => (
+                  <SelectItem key={p.id} value={p.id}>
+                    {p.name}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -209,41 +225,12 @@ function PigeonPopupContent({
           </div>
         </div>
 
-        <div className="space-y-2">
-          <Label>Status</Label>
-          <Select
-            value={draft.status || "home"}
-            disabled={!isAdmin}
-            onValueChange={(status) => {
-              updateDraft("status", status);
-              onUpdateField(pigeon.id, "status", status);
-            }}
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="Select status" />
-            </SelectTrigger>
-
-            <SelectContent>
-              <SelectItem value="home">Home</SelectItem>
-              <SelectItem value="flying">Flying</SelectItem>
-              <SelectItem value="lost">Lost</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-
-        <Separator />
-
-        <div className="space-y-2">
-          <Label htmlFor="pigeon-notes">Notes</Label>
-          <Textarea
-            id="pigeon-notes"
-            value={draft.notes || ""}
-            disabled={!isAdmin}
-            placeholder="Medical notes, description, behavior..."
-            onChange={(event) => updateDraft("notes", event.target.value)}
-            onBlur={() => saveField("notes")}
-          />
-        </div>
+        {/* Notes */}
+        {pigeon.notes && (
+          <p className="text-xs text-muted-foreground whitespace-pre-wrap">
+            {pigeon.notes}
+          </p>
+        )}
       </CardContent>
     </Card>
   );

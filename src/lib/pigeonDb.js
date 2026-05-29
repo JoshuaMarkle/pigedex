@@ -146,10 +146,127 @@ export async function setPigeonParentsInDb(childId, parentIds) {
   if (insertError) throw insertError;
 }
 
+const STORAGE_BUCKET = "pigeon-images";
+
+const MIME_TO_EXT = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "image/gif": "gif" };
+
+export async function uploadPigeonImage(pigeonId, file, isProfile = false) {
+  const ext = MIME_TO_EXT[file.type] ?? file.name.split(".").pop()?.toLowerCase() ?? "jpg";
+  const path = `${pigeonId}/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
+
+  const { error: uploadError } = await supabase.storage
+    .from(STORAGE_BUCKET)
+    .upload(path, file);
+  if (uploadError) throw uploadError;
+
+  const {
+    data: { publicUrl },
+  } = supabase.storage.from(STORAGE_BUCKET).getPublicUrl(path);
+
+  // Determine next sort_order
+  const { data: existing } = await supabase
+    .from("pigeon_images")
+    .select("sort_order")
+    .eq("pigeon_id", pigeonId)
+    .order("sort_order", { ascending: false })
+    .limit(1);
+  const nextSort = (existing?.[0]?.sort_order ?? 0) + 1;
+
+  if (isProfile) {
+    await supabase
+      .from("pigeon_images")
+      .update({ is_profile: false })
+      .eq("pigeon_id", pigeonId)
+      .eq("coop_id", COOP_ID);
+  }
+
+  const { data, error } = await supabase
+    .from("pigeon_images")
+    .insert({
+      coop_id: COOP_ID,
+      pigeon_id: pigeonId,
+      url: publicUrl,
+      is_profile: isProfile,
+      sort_order: nextSort,
+    })
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+export async function setPigeonProfileImage(imageId, pigeonId) {
+  await supabase
+    .from("pigeon_images")
+    .update({ is_profile: false })
+    .eq("pigeon_id", pigeonId)
+    .eq("coop_id", COOP_ID);
+
+  const { error } = await supabase
+    .from("pigeon_images")
+    .update({ is_profile: true })
+    .eq("id", imageId)
+    .eq("coop_id", COOP_ID);
+  if (error) throw error;
+}
+
+export async function deletePigeonImage(imageId, imageUrl) {
+  const parts = imageUrl.split(`/${STORAGE_BUCKET}/`);
+  const storagePath = parts[1];
+  if (storagePath) {
+    await supabase.storage.from(STORAGE_BUCKET).remove([storagePath]);
+  }
+
+  const { error } = await supabase
+    .from("pigeon_images")
+    .delete()
+    .eq("id", imageId)
+    .eq("coop_id", COOP_ID);
+  if (error) throw error;
+}
+
 export async function archivePigeonInDb(pigeonId) {
   const { error } = await supabase
     .from("pigeons")
     .update({ archived: true })
+    .eq("id", pigeonId)
+    .eq("coop_id", COOP_ID);
+
+  if (error) throw error;
+}
+
+export async function deletePigeonInDb(pigeonId) {
+  // Delete all images from storage and the images table
+  const { data: images } = await supabase
+    .from("pigeon_images")
+    .select("id, url")
+    .eq("pigeon_id", pigeonId)
+    .eq("coop_id", COOP_ID);
+
+  if (images?.length) {
+    const storagePaths = images
+      .map((img) => img.url.split(`/${STORAGE_BUCKET}/`)[1])
+      .filter(Boolean);
+    if (storagePaths.length) {
+      await supabase.storage.from(STORAGE_BUCKET).remove(storagePaths);
+    }
+    await supabase
+      .from("pigeon_images")
+      .delete()
+      .eq("pigeon_id", pigeonId)
+      .eq("coop_id", COOP_ID);
+  }
+
+  // Delete relationships where this pigeon is a parent or child
+  await supabase
+    .from("pigeon_relationships")
+    .delete()
+    .eq("coop_id", COOP_ID)
+    .or(`parent_id.eq.${pigeonId},child_id.eq.${pigeonId}`);
+
+  const { error } = await supabase
+    .from("pigeons")
+    .delete()
     .eq("id", pigeonId)
     .eq("coop_id", COOP_ID);
 

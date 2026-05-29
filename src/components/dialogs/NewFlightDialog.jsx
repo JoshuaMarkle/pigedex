@@ -1,9 +1,9 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { format } from "date-fns";
-import { CalendarIcon, MapPin, X } from "lucide-react";
+import { CalendarIcon, MapPin, X, Undo2, LocateFixed, Loader2, Search } from "lucide-react";
 
 import { haversineDistance } from "@/lib/flightDb";
 
@@ -66,8 +66,17 @@ export default function NewFlightDialog({
 }) {
   const [form, setForm] = useState(defaultForm);
   const [releaseLocation, setReleaseLocation] = useState(null); // { lat, lng }
+  const [prevReleaseLocation, setPrevReleaseLocation] = useState(null); // for undo
+  const [previewLocation, setPreviewLocation] = useState(null); // address search preview
+  const [addressQuery, setAddressQuery] = useState("");
+  const [addressResults, setAddressResults] = useState([]);
+  const [addressLoading, setAddressLoading] = useState(false);
+  const [showResults, setShowResults] = useState(false);
+  const [geoLoading, setGeoLoading] = useState(false);
+  const [geoError, setGeoError] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const searchDebounceRef = useRef(null);
 
   function updateField(field, value) {
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -85,7 +94,80 @@ export default function NewFlightDialog({
   function reset() {
     setForm(defaultForm);
     setReleaseLocation(null);
+    setPrevReleaseLocation(null);
+    setPreviewLocation(null);
+    setAddressQuery("");
+    setAddressResults([]);
+    setShowResults(false);
     setError("");
+  }
+
+  function handleAddressInput(e) {
+    const q = e.target.value;
+    setAddressQuery(q);
+    setShowResults(true);
+
+    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+    if (!q.trim()) {
+      setAddressResults([]);
+      setPreviewLocation(null);
+      return;
+    }
+
+    searchDebounceRef.current = setTimeout(async () => {
+      setAddressLoading(true);
+      try {
+        const res = await fetch(
+          `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&limit=5`,
+          { headers: { "Accept-Language": "en" } },
+        );
+        const data = await res.json();
+        setAddressResults(data);
+      } catch {
+        setAddressResults([]);
+      } finally {
+        setAddressLoading(false);
+      }
+    }, 400);
+  }
+
+  function handleSelectAddress(result) {
+    const loc = { lat: parseFloat(result.lat), lng: parseFloat(result.lon) };
+    setPreviewLocation({ ...loc, label: result.display_name });
+    setAddressQuery(result.display_name.split(",").slice(0, 2).join(",").trim());
+    setAddressResults([]);
+    setShowResults(false);
+  }
+
+  function handleReleaseChange(loc) {
+    setPrevReleaseLocation(releaseLocation);
+    setReleaseLocation(loc);
+  }
+
+  function handleUndoLocation() {
+    setReleaseLocation(prevReleaseLocation);
+    setPrevReleaseLocation(null);
+  }
+
+  function handleUseCurrentLocation() {
+    if (!navigator.geolocation) {
+      setGeoError("Geolocation is not supported by your browser.");
+      return;
+    }
+    setGeoLoading(true);
+    setGeoError("");
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+        handleReleaseChange(loc);
+        setGeoLoading(false);
+      },
+      (err) => {
+        setGeoError(err.message ?? "Could not get location.");
+        setGeoLoading(false);
+      },
+      { enableHighAccuracy: false, timeout: 10000 },
+    );
   }
 
   useEffect(() => {
@@ -238,16 +320,41 @@ export default function NewFlightDialog({
                 Release coordinates
               </Label>
 
-              {releaseLocation && (
+              <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={() => setReleaseLocation(null)}
-                  className="flex items-center gap-1 text-xs text-muted-foreground hover:text-destructive"
+                  onClick={handleUseCurrentLocation}
+                  disabled={geoLoading}
+                  className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary disabled:opacity-50"
                 >
-                  <X className="h-3 w-3" />
-                  Clear
+                  {geoLoading ? (
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                  ) : (
+                    <LocateFixed className="h-3 w-3" />
+                  )}
+                  My location
                 </button>
-              )}
+                {prevReleaseLocation !== null && (
+                  <button
+                    type="button"
+                    onClick={handleUndoLocation}
+                    className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary"
+                  >
+                    <Undo2 className="h-3 w-3" />
+                    Undo
+                  </button>
+                )}
+                {releaseLocation && (
+                  <button
+                    type="button"
+                    onClick={() => { setPrevReleaseLocation(releaseLocation); setReleaseLocation(null); }}
+                    className="flex items-center gap-1 text-xs text-muted-foreground hover:text-destructive"
+                  >
+                    <X className="h-3 w-3" />
+                    Clear
+                  </button>
+                )}
+              </div>
             </div>
 
             <p className="text-xs text-muted-foreground">
@@ -259,16 +366,55 @@ export default function NewFlightDialog({
               )}
             </p>
 
+            {geoError && (
+              <p className="text-xs text-red-500">{geoError}</p>
+            )}
+
             {!homeLocation && (
               <p className="text-xs text-amber-600">
                 ⚠ Home location not set — distance calculation unavailable.
               </p>
             )}
 
+            {/* Address search */}
+            <div className="relative">
+              <div className="relative">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+                <input
+                  type="text"
+                  value={addressQuery}
+                  onChange={handleAddressInput}
+                  onFocus={() => addressQuery && setShowResults(true)}
+                  onBlur={() => setTimeout(() => setShowResults(false), 150)}
+                  placeholder="Search address to navigate map…"
+                  className="w-full rounded-md border border-input bg-background pl-8 pr-3 py-1.5 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                />
+                {addressLoading && (
+                  <Loader2 className="absolute right-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 animate-spin text-muted-foreground" />
+                )}
+              </div>
+              {showResults && addressResults.length > 0 && (
+                <ul className="absolute z-50 mt-1 w-full rounded-md border bg-white shadow-lg text-xs max-h-40 overflow-y-auto">
+                  {addressResults.map((r) => (
+                    <li key={r.place_id}>
+                      <button
+                        type="button"
+                        onMouseDown={() => handleSelectAddress(r)}
+                        className="w-full text-left px-3 py-1.5 hover:bg-muted truncate"
+                      >
+                        {r.display_name}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+
             <MapPicker
               homeLocation={homeLocation}
               releaseLocation={releaseLocation}
-              onReleaseChange={setReleaseLocation}
+              onReleaseChange={handleReleaseChange}
+              previewLocation={previewLocation}
             />
           </div>
 

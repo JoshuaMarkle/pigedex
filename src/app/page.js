@@ -10,14 +10,12 @@ import {
   ReactFlowProvider,
 } from "@xyflow/react";
 
-import { supabase } from "@/lib/supabaseClient";
 import {
   fetchPigeonsWithParents,
   createPigeonInDb,
   updatePigeonInDb,
   setPigeonParentsInDb,
 } from "@/lib/pigeonDb";
-import { getIsCoopAdmin } from "@/lib/auth";
 
 import TopNav from "@/components/TopNav";
 import PigeonPopup from "@/components/graph/PigeonPopup";
@@ -105,64 +103,7 @@ function PigeonGraph() {
   const [selectedNode, setSelectedNode] = useState(null);
   const [popupPosition, setPopupPosition] = useState(null);
   const [newPigeonOpen, setNewPigeonOpen] = useState(false);
-
-  const [adminLoginOpen, setAdminLoginOpen] = useState(false);
-  const [isAdmin, setIsAdmin] = useState(false);
-
-  function requireAdmin(callback) {
-    if (isAdmin) {
-      callback();
-      return;
-    }
-
-    setAdminLoginOpen(true);
-  }
-
-  useEffect(() => {
-    let mounted = true;
-
-    async function restoreAdminSession() {
-      try {
-        const {
-          data: { session },
-        } = await supabase.auth.getSession();
-
-        if (!mounted || !session) return;
-
-        const admin = await getIsCoopAdmin();
-
-        if (mounted) {
-          setIsAdmin(admin);
-        }
-      } catch (error) {
-        console.error("restoreAdminSession failed:", error);
-        if (mounted) {
-          setIsAdmin(false);
-        }
-      }
-    }
-
-    restoreAdminSession();
-
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (!mounted) return;
-
-      if (!session || event === "SIGNED_OUT") {
-        setIsAdmin(false);
-        return;
-      }
-
-      const admin = await getIsCoopAdmin();
-      setIsAdmin(admin);
-    });
-
-    return () => {
-      mounted = false;
-      subscription.unsubscribe();
-    };
-  }, []);
+  const [isAdmin, setIsAdmin] = useState(null); // null = unknown, false = not admin, true = admin
 
   const selectedPigeon = useMemo(
     () => pigeons.find((pigeon) => pigeon.id === selectedPigeonId) || null,
@@ -458,9 +399,8 @@ function PigeonGraph() {
       </ReactFlow>
 
       <TopNav
-        isAdmin={isAdmin}
-        onCreateBird={() => requireAdmin(() => setNewPigeonOpen(true))}
-        onOpenAdmin={() => setAdminLoginOpen(true)}
+        onAdd={() => setNewPigeonOpen(true)}
+        onAdminChange={setIsAdmin}
       />
 
       <NewPigeonDialog
@@ -468,12 +408,6 @@ function PigeonGraph() {
         onOpenChange={setNewPigeonOpen}
         pigeons={pigeons}
         onCreate={createPigeon}
-      />
-
-      <AdminLoginDialog
-        open={adminLoginOpen}
-        onOpenChange={setAdminLoginOpen}
-        onLogin={() => setIsAdmin(true)}
       />
 
       <PigeonPopup

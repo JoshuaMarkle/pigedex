@@ -117,6 +117,7 @@ export async function createFlight(flight) {
   // Insert flight_pigeons rows
   const pigeonIds = flight.pigeonIds ?? [];
   const defaultResult = flight.defaultPigeonResult ?? "unknown";
+  let createdPigeons = [];
   if (pigeonIds.length > 0) {
     const rows = pigeonIds.map((pigeonId) => ({
       coop_id: COOP_ID,
@@ -125,13 +126,15 @@ export async function createFlight(flight) {
       result: defaultResult,
       notes: "",
     }));
-    const { error: fpError } = await supabase
+    const { data: fpData, error: fpError } = await supabase
       .from("flight_pigeons")
-      .insert(rows);
+      .insert(rows)
+      .select();
     if (fpError) throw fpError;
+    createdPigeons = fpData ?? [];
   }
 
-  return rowToFlight(data, []);
+  return rowToFlight(data, createdPigeons);
 }
 
 export async function updateFlight(flightId, updates) {
@@ -173,6 +176,37 @@ export async function deleteFlight(flightId) {
 }
 
 // ── Flight pigeons ────────────────────────────────────────────────────────────
+
+export async function addPigeonToFlight(flightId, pigeonId) {
+  const { data, error } = await supabase
+    .from("flight_pigeons")
+    .insert({
+      coop_id: COOP_ID,
+      flight_id: flightId,
+      pigeon_id: pigeonId,
+      result: "unknown",
+      notes: "",
+    })
+    .select()
+    .single();
+  if (error) throw error;
+  return {
+    id: data.id,
+    pigeonId: data.pigeon_id,
+    returnedAt: data.returned_at,
+    result: data.result,
+    notes: data.notes,
+  };
+}
+
+export async function removePigeonFromFlight(flightPigeonId) {
+  const { error } = await supabase
+    .from("flight_pigeons")
+    .delete()
+    .eq("id", flightPigeonId)
+    .eq("coop_id", COOP_ID);
+  if (error) throw error;
+}
 
 export async function updateFlightPigeon(flightPigeonId, updates) {
   const db = {};

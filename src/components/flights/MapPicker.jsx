@@ -23,9 +23,9 @@ L.Icon.Default.mergeOptions({
 });
 
 // Custom dot icon factory
-function dotIcon(color) {
+function dotIcon(color, opacity = 1) {
   return L.divIcon({
-    html: `<div style="width:14px;height:14px;border-radius:50%;background:${color};border:2.5px solid white;box-shadow:0 1px 5px rgba(0,0,0,0.35)"></div>`,
+    html: `<div style="width:14px;height:14px;border-radius:50%;background:${color};border:2.5px solid white;box-shadow:0 1px 5px rgba(0,0,0,0.35);opacity:${opacity}"></div>`,
     className: "",
     iconSize: [14, 14],
     iconAnchor: [7, 7],
@@ -35,8 +35,9 @@ function dotIcon(color) {
 
 const homeIcon = dotIcon("#1e96eb");
 const releaseIcon = dotIcon("#eb5539");
+const previewIcon = dotIcon("#f59e0b", 0.7); // amber, semi-transparent
 
-// Fly to view both markers when they change
+// Fly to view markers when they change
 function AutoFit({ positions }) {
   const map = useMap();
   const prev = useRef(null);
@@ -53,11 +54,29 @@ function AutoFit({ positions }) {
     } else {
       map.flyToBounds(L.latLngBounds(valid), {
         padding: [48, 48],
-        maxZoom: 9,
+        maxZoom: 15,
         duration: 0.6,
       });
     }
   }, [map, positions]);
+
+  return null;
+}
+
+// Fly to a single point (search preview pan) without affecting AutoFit
+function FlyToPreview({ location }) {
+  const map = useMap();
+  const prev = useRef(null);
+
+  useEffect(() => {
+    if (!location) return;
+    const key = `${location.lat},${location.lng}`;
+    if (key === prev.current) return;
+    prev.current = key;
+    map.flyTo([location.lat, location.lng], Math.max(map.getZoom(), 8), {
+      duration: 0.8,
+    });
+  }, [map, location]);
 
   return null;
 }
@@ -75,30 +94,32 @@ function ClickHandler({ onMapClick }) {
  * MapPicker — click anywhere to set the release location.
  *
  * Props:
- *   homeLocation  – { lat, lng, name } | null
- *   releaseLocation – { lat, lng } | null
- *   onReleaseChange – (loc | null) => void
+ *   homeLocation      – { lat, lng, name } | null
+ *   releaseLocation   – { lat, lng } | null
+ *   onReleaseChange   – (loc | null) => void
+ *   previewLocation   – { lat, lng, label? } | null  — address search result (no pin)
  */
 export default function MapPicker({
   homeLocation,
   releaseLocation,
   onReleaseChange,
+  previewLocation = null,
 }) {
   const center = homeLocation
     ? [homeLocation.lat, homeLocation.lng]
     : [39.5, -98.35]; // continental US fallback
 
-  const zoom = homeLocation ? 5 : 3;
+  const zoom = homeLocation ? 15 : 4;
 
-  const homePos = homeLocation
-    ? [homeLocation.lat, homeLocation.lng]
-    : null;
+  const homePos = homeLocation ? [homeLocation.lat, homeLocation.lng] : null;
   const releasePos = releaseLocation
     ? [releaseLocation.lat, releaseLocation.lng]
     : null;
+  const previewPos = previewLocation
+    ? [previewLocation.lat, previewLocation.lng]
+    : null;
 
-  const linePositions =
-    homePos && releasePos ? [homePos, releasePos] : null;
+  const linePositions = homePos && releasePos ? [homePos, releasePos] : null;
 
   return (
     <MapContainer
@@ -113,7 +134,8 @@ export default function MapPicker({
       />
 
       <ClickHandler onMapClick={onReleaseChange} />
-      <AutoFit positions={[homePos, releasePos]} />
+      <AutoFit positions={[homePos, releasePos].filter(Boolean)} />
+      {previewPos && !releasePos && <FlyToPreview location={previewLocation} />}
 
       {homePos && (
         <Marker position={homePos} icon={homeIcon}>
@@ -124,6 +146,19 @@ export default function MapPicker({
       {releasePos && (
         <Marker position={releasePos} icon={releaseIcon}>
           <Popup>Release location</Popup>
+        </Marker>
+      )}
+
+      {/* Preview marker (address search result, not confirmed) */}
+      {previewPos && !releasePos && (
+        <Marker position={previewPos} icon={previewIcon}>
+          <Popup>
+            <span className="text-xs">
+              {previewLocation?.label ?? "Address search result"}
+              <br />
+              <em>Click map to place pin here</em>
+            </span>
+          </Popup>
         </Marker>
       )}
 

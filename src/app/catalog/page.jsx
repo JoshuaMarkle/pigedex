@@ -1,13 +1,16 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import { PiBirdBold } from "react-icons/pi";
+import { RiResetLeftLine } from "react-icons/ri";
 
-import { fetchPigeonsWithParents } from "@/lib/pigeonDb";
+import { fetchPigeonsWithParents, createPigeonInDb } from "@/lib/pigeonDb";
 import { fetchFlightsWithPigeons } from "@/lib/flightDb";
 
-import SimpleTopNav from "@/components/SimpleTopNav";
+import TopNav from "@/components/TopNav";
+import NewPigeonDialog from "@/components/dialogs/NewPigeonDialog";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -237,7 +240,21 @@ function sortPigeons(pigeons, sortBy) {
   return sorted;
 }
 
+const BAND_COLOR_HEX = {
+  red: "#ef4444",
+  blue: "#3b82f6",
+  green: "#22c55e",
+  yellow: "#eab308",
+  white: "#f1f5f9",
+  black: "#1e293b",
+};
+
 function CatalogCard({ pigeon }) {
+  const bandHex =
+    pigeon.bandColor && pigeon.bandColor !== "none"
+      ? (BAND_COLOR_HEX[pigeon.bandColor] ?? null)
+      : null;
+
   return (
     <Link href={`/pigeons/${pigeon.id}`} className="block">
       <Card className="h-full border-b-4 transition-transform hover:-translate-y-1 hover:shadow-md">
@@ -253,22 +270,23 @@ function CatalogCard({ pigeon }) {
             <CardTitle className="truncate text-lg">
               {pigeon.name || "Unnamed bird"}
             </CardTitle>
-
-            <p className="text-sm text-muted-foreground">
-              {pigeon.bandId || "Unbanded"}
-              {pigeon.bandColor && pigeon.bandColor !== "none"
-                ? ` (${pigeon.bandColor})`
-                : ""}
-            </p>
+            <span
+              className={`mt-1 inline-block rounded-full px-2 py-0.5 text-xs font-medium ${getStatusClass(pigeon.status)}`}
+            >
+              {getStatusLabel(pigeon.status)}
+            </span>
           </div>
 
-          <span
-            className={`rounded-full px-2 py-1 text-xs font-medium ${getStatusClass(
-              pigeon.status,
-            )}`}
-          >
-            {getStatusLabel(pigeon.status)}
-          </span>
+          {/* Band ID with color swatch */}
+          <div className="flex items-center gap-1.5 shrink-0 text-xs text-muted-foreground">
+            {bandHex && (
+              <span
+                className="h-3 w-3 rounded-full border border-black/10 shrink-0"
+                style={{ backgroundColor: bandHex }}
+              />
+            )}
+            <span>{pigeon.bandId || "Unbanded"}</span>
+          </div>
         </CardHeader>
 
         <CardContent className="space-y-3">
@@ -347,15 +365,49 @@ function BirthdayStatCard({ nextBirthday }) {
   );
 }
 
-export default function CatalogPage() {
+function CatalogContent() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+
   const [pigeons, setPigeons] = useState([]);
   const [flights, setFlights] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
 
-  const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState("all");
-  const [sortBy, setSortBy] = useState("birthday-newest");
+  const [isAdmin, setIsAdmin] = useState(null);
+  const [newPigeonOpen, setNewPigeonOpen] = useState(false);
+
+  async function handleCreatePigeon(nextPigeon) {
+    try {
+      const created = await createPigeonInDb(nextPigeon);
+      setPigeons((prev) => [...prev, created]);
+    } catch (err) {
+      alert(err?.message ?? "Failed to create pigeon.");
+    }
+  }
+
+  const [search, setSearch] = useState(searchParams.get("q") ?? "");
+  const [statusFilter, setStatusFilter] = useState(
+    searchParams.get("status") ?? "all",
+  );
+  const [sortBy, setSortBy] = useState(
+    searchParams.get("sort") ?? "birthday-newest",
+  );
+
+  // Sync filter/search state back into URL so back-navigation restores it
+  const isFirstRender = useRef(true);
+  useEffect(() => {
+    if (isFirstRender.current) {
+      isFirstRender.current = false;
+      return;
+    }
+    const params = new URLSearchParams();
+    if (search) params.set("q", search);
+    if (statusFilter !== "all") params.set("status", statusFilter);
+    if (sortBy !== "birthday-newest") params.set("sort", sortBy);
+    const qs = params.toString();
+    router.replace(qs ? `/catalog?${qs}` : "/catalog", { scroll: false });
+  }, [search, statusFilter, sortBy, router]);
 
   useEffect(() => {
     let mounted = true;
@@ -439,7 +491,13 @@ export default function CatalogPage() {
 
   return (
     <main className="relative min-h-screen bg-background">
-      <SimpleTopNav />
+      <TopNav onAdd={() => setNewPigeonOpen(true)} onAdminChange={setIsAdmin} />
+      <NewPigeonDialog
+        open={newPigeonOpen}
+        onOpenChange={setNewPigeonOpen}
+        pigeons={pigeons}
+        onCreate={handleCreatePigeon}
+      />
 
       <div className="mx-auto max-w-5xl px-6 pt-24 pb-12 space-y-8">
         <header>
@@ -465,7 +523,7 @@ export default function CatalogPage() {
         </section>
 
         <Card>
-          <CardContent className="grid gap-4 p-4 md:grid-cols-[1fr_180px_220px]">
+          <CardContent className="grid gap-4 p-4 grid-cols-1 sm:grid-cols-[1fr_80px_180px_40px]">
             <div className="space-y-2">
               <Label htmlFor="catalog-search">Search</Label>
               <Input
@@ -475,40 +533,53 @@ export default function CatalogPage() {
                 placeholder="Search by name, band ID, birthday, notes..."
               />
             </div>
-
-            <div className="space-y-2">
-              <Label>Status</Label>
-              <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Filter status" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All</SelectItem>
-                  <SelectItem value="home">Home</SelectItem>
-                  <SelectItem value="flying">Flying</SelectItem>
-                  <SelectItem value="lost">Lost</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-2">
-              <Label>Sort</Label>
-              <Select value={sortBy} onValueChange={setSortBy}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Sort pigeons" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="birthday-newest">
-                    Birthday, newest first
-                  </SelectItem>
-                  <SelectItem value="birthday-oldest">
-                    Birthday, oldest first
-                  </SelectItem>
-                  <SelectItem value="name-az">Name, A to Z</SelectItem>
-                  <SelectItem value="name-za">Name, Z to A</SelectItem>
-                  <SelectItem value="status">Status</SelectItem>
-                </SelectContent>
-              </Select>
+            <div className="grid grid-cols-[1fr_1fr_40px] gap-4 sm:contents">
+              <div className="space-y-2">
+                <Label>Status</Label>
+                <Select value={statusFilter} onValueChange={setStatusFilter}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Filter status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All</SelectItem>
+                    <SelectItem value="home">Home</SelectItem>
+                    <SelectItem value="flying">Flying</SelectItem>
+                    <SelectItem value="lost">Lost</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Sort</Label>
+                <Select value={sortBy} onValueChange={setSortBy}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Sort pigeons" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="birthday-newest">
+                      Birthday, newest first
+                    </SelectItem>
+                    <SelectItem value="birthday-oldest">
+                      Birthday, oldest first
+                    </SelectItem>
+                    <SelectItem value="name-az">Name, A to Z</SelectItem>
+                    <SelectItem value="name-za">Name, Z to A</SelectItem>
+                    <SelectItem value="status">Status</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Reset</Label>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setSearch("");
+                    setStatusFilter("all");
+                    setSortBy("birthday-newest");
+                  }}
+                >
+                  <RiResetLeftLine />
+                </Button>
+              </div>
             </div>
           </CardContent>
         </Card>
@@ -546,5 +617,13 @@ export default function CatalogPage() {
         ) : null}
       </div>
     </main>
+  );
+}
+
+export default function CatalogPage() {
+  return (
+    <Suspense>
+      <CatalogContent />
+    </Suspense>
   );
 }
