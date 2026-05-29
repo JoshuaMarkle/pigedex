@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 
 export const metadata = {
   title: "Pigedex",
-  description: "The all-in-one platform for modern loft management.",
+  description: "The all-in-one solution for modern loft management.",
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
@@ -23,6 +23,24 @@ export const metadata = {
   },
   formatDetection: {
     telephone: false,
+  },
+  icons: {
+    icon: [
+      { url: "/icons/favicon.ico" },
+      { url: "/icons/favicon-16x16.png", sizes: "16x16", type: "image/png" },
+      { url: "/icons/favicon-32x32.png", sizes: "32x32", type: "image/png" },
+    ],
+    apple: [{ url: "/icons/apple-touch-icon.png" }],
+    other: [
+      {
+        rel: "android-chrome",
+        url: "/icons/android-chrome-192x192.png",
+      },
+      {
+        rel: "android-chrome",
+        url: "/icons/android-chrome-512x512.png",
+      },
+    ],
   },
 };
 
@@ -41,7 +59,6 @@ export default function RootLayout({ children }) {
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <head>
-        <link rel="apple-touch-icon" href="/icons/pigedex-logo-192.png" />
         <meta name="mobile-web-app-capable" content="yes" />
       </head>
       <body className="min-h-full flex flex-col">
