@@ -97,18 +97,19 @@ export async function fetchFlightsWithPigeons() {
 }
 
 export async function createFlight(flight) {
-  const { data, error } = await supabase
-    .from("flights")
-    .insert({
-      coop_id: COOP_ID,
-      flight_date: flight.flightDate,
-      location_name: flight.locationName || null,
-      release_lat: flight.releaseLat ?? null,
-      release_lng: flight.releaseLng ?? null,
-      distance: flight.distance ?? null,
-      status: flight.status ?? "completed",
-      notes: flight.notes ?? "",
-    })
+  const row = {
+    coop_id: COOP_ID,
+    flight_date: flight.flightDate,
+    location_name: flight.locationName || null,
+    release_lat: flight.releaseLat ?? null,
+    release_lng: flight.releaseLng ?? null,
+    distance: flight.distance ?? null,
+    status: flight.status ?? "completed",
+    notes: flight.notes ?? "",
+  };
+  if (flight.id) row.id = flight.id;
+
+  const { data, error } = await supabase.from("flights").insert(row)
     .select()
     .single();
 
@@ -119,13 +120,22 @@ export async function createFlight(flight) {
   const defaultResult = flight.defaultPigeonResult ?? "unknown";
   let createdPigeons = [];
   if (pigeonIds.length > 0) {
-    const rows = pigeonIds.map((pigeonId) => ({
-      coop_id: COOP_ID,
-      flight_id: data.id,
-      pigeon_id: pigeonId,
-      result: defaultResult,
-      notes: "",
-    }));
+    const rows = flight.pigeonRows
+      ? flight.pigeonRows.map((r) => ({
+          id: r.id,
+          coop_id: COOP_ID,
+          flight_id: data.id,
+          pigeon_id: r.pigeonId,
+          result: defaultResult,
+          notes: "",
+        }))
+      : pigeonIds.map((pigeonId) => ({
+          coop_id: COOP_ID,
+          flight_id: data.id,
+          pigeon_id: pigeonId,
+          result: defaultResult,
+          notes: "",
+        }));
     const { data: fpData, error: fpError } = await supabase
       .from("flight_pigeons")
       .insert(rows)
@@ -177,10 +187,11 @@ export async function deleteFlight(flightId) {
 
 // ── Flight pigeons ────────────────────────────────────────────────────────────
 
-export async function addPigeonToFlight(flightId, pigeonId) {
+export async function addPigeonToFlight(flightId, pigeonId, id) {
   const { data, error } = await supabase
     .from("flight_pigeons")
     .insert({
+      ...(id && { id }),
       coop_id: COOP_ID,
       flight_id: flightId,
       pigeon_id: pigeonId,

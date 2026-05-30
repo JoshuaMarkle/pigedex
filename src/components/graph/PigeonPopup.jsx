@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -71,6 +71,11 @@ function PigeonPopupContent({
   isAdmin,
 }) {
   const [draft, setDraft] = useState(pigeon);
+
+  // Sync draft when the parent updates status or parentIds from outside
+  useEffect(() => {
+    setDraft((prev) => ({ ...prev, status: pigeon.status, parentIds: pigeon.parentIds }));
+  }, [pigeon.status, pigeon.parentIds]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const parentIds = draft.parentIds || [];
   const parentOneId = parentIds[0] || "";

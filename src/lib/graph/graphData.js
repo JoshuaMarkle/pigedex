@@ -53,7 +53,7 @@ export function buildGraphData(pigeons, handlers) {
       id: `${parentId}-${unionNode.id}`,
       source: parentId,
       target: unionNode.id,
-      type: "bezier",
+      type: "default",
     })),
   );
 
@@ -66,7 +66,7 @@ export function buildGraphData(pigeons, handlers) {
         id: `${unionId}-${pigeon.id}`,
         source: unionId,
         target: pigeon.id,
-        type: "bezier",
+        type: "default",
         markerEnd: {
           type: MarkerType.ArrowClosed,
         },

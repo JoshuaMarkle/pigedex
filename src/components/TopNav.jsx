@@ -11,8 +11,8 @@ import { Button } from "@/components/ui/button";
 import AdminLoginDialog from "@/components/dialogs/AdminLoginDialog";
 import FlightSettingsDialog from "@/components/dialogs/FlightSettingsDialog";
 import { getIsCoopAdmin } from "@/lib/auth";
-import { fetchCoopSettings } from "@/lib/flightDb";
 import { supabase } from "@/lib/supabaseClient";
+import { useCoopSettings } from "@/lib/AppDataContext";
 
 const links = [
   { href: "/", label: "Home" },
@@ -20,24 +20,23 @@ const links = [
   { href: "/catalog", label: "Catalog" },
 ];
 
-export default function TopNav({ onAdd, onAdminChange, onSettingsChange }) {
+export default function TopNav({ onAdd, onAdminChange }) {
   const pathname = usePathname();
   const [isAdmin, setIsAdmin] = useState(null);
   const [showLogin, setShowLogin] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
-  const [coopSettings, setCoopSettings] = useState(null);
   const pendingAdd = useRef(false);
+
+  const { coopSettings, updateCoopSettings } = useCoopSettings();
 
   useEffect(() => {
     let mounted = true;
 
     async function init() {
       try {
-        const {
-          data: { session },
-        } = await supabase.auth.getSession();
-        if (!mounted) return;
-        const admin = session ? await getIsCoopAdmin() : false;
+        // getIsCoopAdmin handles: session valid + network, session valid + offline (cache),
+        // and session null + offline (cache). Covers all scenarios.
+        const admin = await getIsCoopAdmin();
         if (mounted) {
           setIsAdmin(admin ?? false);
           onAdminChange?.(admin ?? false);
@@ -48,14 +47,6 @@ export default function TopNav({ onAdd, onAdminChange, onSettingsChange }) {
           onAdminChange?.(false);
         }
       }
-
-      try {
-        const settings = await fetchCoopSettings();
-        if (mounted) {
-          setCoopSettings(settings);
-          onSettingsChange?.(settings);
-        }
-      } catch {}
     }
 
     init();
@@ -65,6 +56,10 @@ export default function TopNav({ onAdd, onAdminChange, onSettingsChange }) {
     } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (!mounted) return;
       if (!session || event === "SIGNED_OUT") {
+        // Supabase fires null-session events when token refresh fails offline.
+        // Only revoke admin for an explicit sign-out or when we're actually online
+        // (meaning the session truly expired, not just unreachable).
+        if (!navigator.onLine && event !== "SIGNED_OUT") return;
         setIsAdmin(false);
         onAdminChange?.(false);
         return;
@@ -110,8 +105,7 @@ export default function TopNav({ onAdd, onAdminChange, onSettingsChange }) {
   }
 
   function handleSettingsSave(newSettings) {
-    setCoopSettings(newSettings);
-    onSettingsChange?.(newSettings);
+    updateCoopSettings(newSettings);
   }
 
   function isActive(href) {

@@ -48,6 +48,7 @@ export default function NewPigeonDialog({
   };
 
   const [form, setForm] = useState(defaultForm);
+  const [submitting, setSubmitting] = useState(false);
 
   function updateField(field, value) {
     setForm((current) => ({
@@ -60,15 +61,13 @@ export default function NewPigeonDialog({
     setForm(defaultForm);
   }
 
-  function handleSubmit(event) {
+  async function handleSubmit(event) {
     event.preventDefault();
-
-    if (!form.name.trim()) return;
+    if (!form.name.trim() || submitting) return;
 
     const parentIds = [form.parentOneId, form.parentTwoId].filter(Boolean);
 
     const nextPigeon = {
-      id: crypto.randomUUID(),
       name: form.name.trim(),
       birthday: form.birthday.trim() || null,
       status: form.status,
@@ -78,9 +77,14 @@ export default function NewPigeonDialog({
       notes: form.notes.trim() || "",
     };
 
-    onCreate(nextPigeon);
-    resetForm();
-    onOpenChange(false);
+    setSubmitting(true);
+    try {
+      await onCreate(nextPigeon);
+      resetForm();
+      onOpenChange(false);
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   const parentOneOptions = pigeons.filter(
@@ -300,12 +304,15 @@ export default function NewPigeonDialog({
             <Button
               type="button"
               variant="outline"
+              disabled={submitting}
               onClick={() => onOpenChange(false)}
             >
               Cancel
             </Button>
 
-            <Button type="submit">Add bird</Button>
+            <Button type="submit" disabled={submitting}>
+              {submitting ? "Adding…" : "Add bird"}
+            </Button>
           </div>
         </form>
       </DialogContent>

@@ -1,7 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   PlaneTakeoff,
   MapPin,
@@ -12,17 +12,7 @@ import {
   Map,
 } from "lucide-react";
 
-import {
-  fetchFlightsWithPigeons,
-  fetchCoopSettings,
-  createFlight,
-  deleteFlight,
-  updateFlight,
-  updateFlightPigeon,
-  addPigeonToFlight,
-  removePigeonFromFlight,
-} from "@/lib/flightDb";
-import { fetchPigeonsWithParents, updatePigeonInDb } from "@/lib/pigeonDb";
+import { usePigeons, useFlights, useCoopSettings } from "@/lib/AppDataContext";
 import {
   returnedAtToDurationSeconds,
   formatSecondsAsDuration,
@@ -322,19 +312,25 @@ function FlightListPanel({
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function FlightsPage() {
-  const [flights, setFlights] = useState([]);
-  const [pigeons, setPigeons] = useState([]);
-  const [coopSettings, setCoopSettings] = useState(null);
-  const [isAdmin, setIsAdmin] = useState(null); // null = unknown, false = not admin, true = admin
+  const { flights, flightsLoading: loading, flightsError: loadError, createFlight, saveFlight, deleteFlight } = useFlights();
+  const { pigeons } = usePigeons();
+  const { coopSettings } = useCoopSettings();
 
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState("");
-
+  const [isAdmin, setIsAdmin] = useState(null);
   const [statusFilter, setStatusFilter] = useState("all");
   const [activeFlight, setActiveFlight] = useState(null);
 
   const [flightDialogOpen, setFlightDialogOpen] = useState(false);
   const [editFlightId, setEditFlightId] = useState(null);
+
+  // Set initial active flight once flights load
+  const didSetInitialFlight = useRef(false);
+  useEffect(() => {
+    if (!loading && flights.length > 0 && !didSetInitialFlight.current) {
+      didSetInitialFlight.current = true;
+      setActiveFlight(flights[0].id);
+    }
+  }, [loading, flights]);
 
   // Mobile detection
   const [isMobile, setIsMobile] = useState(false);
@@ -347,43 +343,6 @@ export default function FlightsPage() {
     check();
     window.addEventListener("resize", check);
     return () => window.removeEventListener("resize", check);
-  }, []);
-
-  // ── Load ──
-  useEffect(() => {
-    let mounted = true;
-
-    async function load() {
-      try {
-        setLoading(true);
-        setLoadError("");
-
-        const [loadedFlights, loadedPigeons, settings] = await Promise.all([
-          fetchFlightsWithPigeons(),
-          fetchPigeonsWithParents(),
-          fetchCoopSettings(),
-        ]);
-
-        if (!mounted) return;
-        setFlights(loadedFlights);
-        setPigeons(loadedPigeons);
-        setCoopSettings(settings);
-
-        if (loadedFlights.length > 0) {
-          setActiveFlight(loadedFlights[0].id);
-        }
-      } catch (err) {
-        console.error(err);
-        if (mounted) setLoadError(err?.message ?? "Failed to load data.");
-      } finally {
-        if (mounted) setLoading(false);
-      }
-    }
-
-    load();
-    return () => {
-      mounted = false;
-    };
   }, []);
 
   const homeLocation = useMemo(() => {
@@ -405,28 +364,12 @@ export default function FlightsPage() {
   // ── Handlers ──
   async function handleCreateFlight(flightData) {
     const created = await createFlight(flightData);
-
-    if (flightData.setPigeonsFlying && flightData.pigeonIds?.length > 0) {
-      await Promise.all(
-        flightData.pigeonIds.map((id) =>
-          updatePigeonInDb(id, { status: "flying" }),
-        ),
-      );
-      setPigeons((prev) =>
-        prev.map((p) =>
-          flightData.pigeonIds.includes(p.id) ? { ...p, status: "flying" } : p,
-        ),
-      );
-    }
-
-    setFlights((prev) => [created, ...prev]);
     setActiveFlight(created.id);
   }
 
   async function handleDeleteFlight(id) {
     if (!confirm("Delete this flight?")) return;
     await deleteFlight(id);
-    setFlights((prev) => prev.filter((f) => f.id !== id));
     if (activeFlight === id) setActiveFlight(null);
   }
 
@@ -434,45 +377,9 @@ export default function FlightsPage() {
     flightId,
     flightUpdates,
     pigeonUpdates,
-    { addPigeonIds = [], removePigeonIds = [] } = {},
+    addRemove,
   ) {
-    await updateFlight(flightId, flightUpdates);
-
-    if (pigeonUpdates.length > 0) {
-      await Promise.all(
-        pigeonUpdates.map((u) =>
-          updateFlightPigeon(u.id, {
-            result: u.result,
-            returnedAt: u.returnedAt,
-          }),
-        ),
-      );
-    }
-
-    await Promise.all(removePigeonIds.map(removePigeonFromFlight));
-
-    const newPigeons = await Promise.all(
-      addPigeonIds.map((pigeonId) => addPigeonToFlight(flightId, pigeonId)),
-    );
-
-    setFlights((prev) =>
-      prev.map((f) => {
-        if (f.id !== flightId) return f;
-        const updatedExisting = f.pigeons
-          .filter((fp) => !removePigeonIds.includes(fp.id))
-          .map((fp) => {
-            const upd = pigeonUpdates.find((u) => u.id === fp.id);
-            return upd
-              ? { ...fp, result: upd.result, returnedAt: upd.returnedAt }
-              : fp;
-          });
-        return {
-          ...f,
-          ...flightUpdates,
-          pigeons: [...updatedExisting, ...newPigeons],
-        };
-      }),
-    );
+    await saveFlight(flightId, flightUpdates, pigeonUpdates, addRemove);
   }
 
   const editFlight = useMemo(
@@ -528,8 +435,7 @@ export default function FlightsPage() {
         <TopNav
           onAdd={() => setFlightDialogOpen(true)}
           onAdminChange={setIsAdmin}
-          onSettingsChange={setCoopSettings}
-        />
+                  />
 
         {/* Tab bar */}
         <div className="absolute top-[74px] left-0 right-0 z-10 flex border-b bg-white/95 backdrop-blur shrink-0">
@@ -609,8 +515,7 @@ export default function FlightsPage() {
       <TopNav
         onAdd={() => setFlightDialogOpen(true)}
         onAdminChange={setIsAdmin}
-        onSettingsChange={setCoopSettings}
-      />
+              />
 
       {/* Left floating sidebar */}
       <aside className="absolute left-4 top-4 bottom-4 z-10 flex w-80 flex-col gap-2">

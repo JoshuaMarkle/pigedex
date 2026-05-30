@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, useCallback } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import {
   ReactFlow,
   Background,
@@ -10,12 +10,7 @@ import {
   ReactFlowProvider,
 } from "@xyflow/react";
 
-import {
-  fetchPigeonsWithParents,
-  createPigeonInDb,
-  updatePigeonInDb,
-  setPigeonParentsInDb,
-} from "@/lib/pigeonDb";
+import { usePigeons } from "@/lib/AppDataContext";
 
 import TopNav from "@/components/TopNav";
 import PigeonPopup from "@/components/graph/PigeonPopup";
@@ -92,18 +87,46 @@ function getPopupPosition({ node, reactFlow, containerRect }) {
 function PigeonGraph() {
   const reactFlow = useReactFlow();
 
-  const [pigeons, setPigeons] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState(null);
+  const {
+    pigeons,
+    pigeonsLoading: loading,
+    pigeonsError: loadError,
+    createPigeon,
+    updatePigeon,
+    setPigeonParents,
+  } = usePigeons();
 
-  const [nodes, setNodes] = useState([]);
+  const [rawNodes, setRawNodes] = useState([]);
   const [edges, setEdges] = useState([]);
+
+  // Derive display nodes from rawNodes + latest pigeon data so field edits
+  // (name, status, imageUrl) are reflected without a full re-layout.
+  const nodes = useMemo(
+    () =>
+      rawNodes.map((node) => {
+        const p = pigeons.find((pig) => pig.id === node.id);
+        if (!p) return node;
+        return {
+          ...node,
+          data: {
+            ...node.data,
+            name: p.name,
+            status: p.status,
+            imageUrl: p.imageUrl,
+            bandId: p.bandId,
+            birthday: p.birthday,
+            notes: p.notes,
+          },
+        };
+      }),
+    [rawNodes, pigeons],
+  );
   const [hoveredPigeonId, setHoveredPigeonId] = useState(null);
   const [selectedPigeonId, setSelectedPigeonId] = useState(null);
   const [selectedNode, setSelectedNode] = useState(null);
   const [popupPosition, setPopupPosition] = useState(null);
   const [newPigeonOpen, setNewPigeonOpen] = useState(false);
-  const [isAdmin, setIsAdmin] = useState(null); // null = unknown, false = not admin, true = admin
+  const [isAdmin, setIsAdmin] = useState(null);
 
   const selectedPigeon = useMemo(
     () => pigeons.find((pigeon) => pigeon.id === selectedPigeonId) || null,
@@ -124,7 +147,7 @@ function PigeonGraph() {
 
       const layouted = await layoutWithElk(rawNodes, rawEdges);
 
-      setNodes(layouted.nodes);
+      setRawNodes(layouted.nodes);
       setEdges(layouted.edges);
 
       if (viewport) {
@@ -136,39 +159,22 @@ function PigeonGraph() {
     [reactFlow, handleHover],
   );
 
+  // Re-layout only when the graph topology changes (parentIds or pigeon count).
+  // This avoids a full re-layout on every field edit (status, name, etc.).
+  const graphKey = useMemo(
+    () =>
+      pigeons
+        .map((p) => `${p.id}:${(p.parentIds ?? []).slice().sort().join(",")}`)
+        .join("|"),
+    [pigeons],
+  );
+  const isFirstLayout = useRef(true);
   useEffect(() => {
-    async function loadData() {
-      try {
-        setLoading(true);
-        setLoadError(null);
-
-        const loadedPigeons = await fetchPigeonsWithParents();
-
-        setPigeons(loadedPigeons);
-        await runLayout(loadedPigeons, false);
-      } catch (error) {
-        console.error("loadData failed:", {
-          message: error?.message,
-          details: error?.details,
-          hint: error?.hint,
-          code: error?.code,
-          raw: error,
-        });
-
-        setLoadError(
-          error?.message ||
-            error?.details ||
-            error?.hint ||
-            JSON.stringify(error) ||
-            "Failed to load pigeons.",
-        );
-      } finally {
-        setLoading(false);
-      }
-    }
-
-    loadData();
-  }, [runLayout]);
+    if (!graphKey) return;
+    const preserve = !isFirstLayout.current;
+    isFirstLayout.current = false;
+    runLayout(pigeons, preserve);
+  }, [graphKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const highlightedEdgeIds = useMemo(() => {
     if (!hoveredPigeonId) return new Set();
@@ -190,70 +196,10 @@ function PigeonGraph() {
     });
   }, [edges, highlightedEdgeIds]);
 
-  function updateSelectedPigeon(nextPigeon) {
-    setPigeons((current) =>
-      current.map((pigeon) =>
-        pigeon.id === nextPigeon.id
-          ? {
-              ...pigeon,
-              name: nextPigeon.name,
-              birthday: nextPigeon.birthday,
-              bandId: nextPigeon.bandId,
-              status: nextPigeon.status,
-              notes: nextPigeon.notes,
-            }
-          : pigeon,
-      ),
-    );
-
-    setNodes((current) =>
-      current.map((node) => {
-        if (node.id !== nextPigeon.id) return node;
-
-        return {
-          ...node,
-          data: {
-            ...node.data,
-            name: nextPigeon.name,
-            birthday: nextPigeon.birthday,
-            bandId: nextPigeon.bandId,
-            status: nextPigeon.status,
-            notes: nextPigeon.notes,
-          },
-        };
-      }),
-    );
-  }
-
-  async function updatePigeonParents(pigeonId, parentIds) {
-    const nextPigeons = pigeons.map((pigeon) =>
-      pigeon.id === pigeonId
-        ? {
-            ...pigeon,
-            parentIds,
-          }
-        : pigeon,
-    );
-
+  async function handleCreatePigeon(draft) {
     try {
-      await setPigeonParentsInDb(pigeonId, parentIds);
-
-      setPigeons(nextPigeons);
-      await runLayout(nextPigeons, true);
-    } catch (error) {
-      console.error(error);
-      alert(error.message || "Failed to save parents.");
-    }
-  }
-
-  async function createPigeon(nextPigeon) {
-    try {
-      const createdPigeon = await createPigeonInDb(nextPigeon);
-      const nextPigeons = [...pigeons, createdPigeon];
-
-      setPigeons(nextPigeons);
-      await runLayout(nextPigeons, true);
-      setSelectedPigeonId(createdPigeon.id);
+      const created = await createPigeon(draft);
+      setSelectedPigeonId(created.id);
     } catch (error) {
       console.error(error);
       alert(error.message || "Failed to create pigeon.");
@@ -261,77 +207,20 @@ function PigeonGraph() {
   }
 
   async function updatePigeonField(pigeonId, field, value) {
-    setPigeons((current) =>
-      current.map((pigeon) =>
-        pigeon.id === pigeonId ? { ...pigeon, [field]: value } : pigeon,
-      ),
-    );
-
-    setNodes((current) =>
-      current.map((node) => {
-        if (node.id !== pigeonId) return node;
-
-        return {
-          ...node,
-          data: {
-            ...node.data,
-            [field]: value,
-          },
-        };
-      }),
-    );
-
     try {
-      await updatePigeonInDb(pigeonId, {
-        [field]: value,
-      });
+      await updatePigeon(pigeonId, { [field]: value });
     } catch (error) {
       console.error(error);
       alert(error.message || "Failed to save pigeon.");
     }
   }
 
-  async function addChild(parentId, childId) {
-    const nextPigeons = pigeons.map((pigeon) => {
-      if (pigeon.id !== childId) return pigeon;
-
-      return {
-        ...pigeon,
-        parentIds: [...(pigeon.parentIds || []), parentId],
-      };
-    });
-
+  async function updatePigeonParents(pigeonId, parentIds) {
     try {
-      const child = nextPigeons.find((pigeon) => pigeon.id === childId);
-      await setPigeonParentsInDb(childId, child.parentIds);
-
-      setPigeons(nextPigeons);
-      await runLayout(nextPigeons, true);
+      await setPigeonParents(pigeonId, parentIds);
     } catch (error) {
       console.error(error);
-      alert(error.message || "Failed to add child.");
-    }
-  }
-
-  async function removeChild(parentId, childId) {
-    const nextPigeons = pigeons.map((pigeon) => {
-      if (pigeon.id !== childId) return pigeon;
-
-      return {
-        ...pigeon,
-        parentIds: (pigeon.parentIds || []).filter((id) => id !== parentId),
-      };
-    });
-
-    try {
-      const child = nextPigeons.find((pigeon) => pigeon.id === childId);
-      await setPigeonParentsInDb(childId, child.parentIds);
-
-      setPigeons(nextPigeons);
-      await runLayout(nextPigeons, true);
-    } catch (error) {
-      console.error(error);
-      alert(error.message || "Failed to remove child.");
+      alert(error.message || "Failed to save parents.");
     }
   }
 
@@ -364,7 +253,7 @@ function PigeonGraph() {
         maxZoom={3.0}
         nodesDraggable={false}
         defaultEdgeOptions={{
-          type: "bezier",
+          type: "default",
           style: {
             strokeWidth: 2,
             stroke: "var(--color-edge)",
@@ -398,16 +287,13 @@ function PigeonGraph() {
         <MiniMap zoomable pannable />
       </ReactFlow>
 
-      <TopNav
-        onAdd={() => setNewPigeonOpen(true)}
-        onAdminChange={setIsAdmin}
-      />
+      <TopNav onAdd={() => setNewPigeonOpen(true)} onAdminChange={setIsAdmin} />
 
       <NewPigeonDialog
         open={newPigeonOpen}
         onOpenChange={setNewPigeonOpen}
         pigeons={pigeons}
-        onCreate={createPigeon}
+        onCreate={handleCreatePigeon}
       />
 
       <PigeonPopup

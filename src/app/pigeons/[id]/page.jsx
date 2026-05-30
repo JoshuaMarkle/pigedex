@@ -19,17 +19,8 @@ import {
 } from "lucide-react";
 import { PiBirdBold } from "react-icons/pi";
 
-import {
-  fetchPigeonsWithParents,
-  updatePigeonInDb,
-  setPigeonParentsInDb,
-  deletePigeonInDb,
-  uploadPigeonImage,
-  setPigeonProfileImage,
-  deletePigeonImage,
-} from "@/lib/pigeonDb";
 import { compressImage } from "@/lib/imageUtils";
-import { fetchFlightsWithPigeons, fetchCoopSettings } from "@/lib/flightDb";
+import { usePigeons, useFlights, useCoopSettings } from "@/lib/AppDataContext";
 import {
   formatSecondsAsDuration,
   returnedAtToDurationSeconds,
@@ -108,14 +99,25 @@ export default function PigeonDetailPage({ params }) {
   const { id } = use(params);
   const router = useRouter();
 
-  const [pigeon, setPigeon] = useState(null);
-  const [allPigeons, setAllPigeons] = useState([]);
-  const [flights, setFlights] = useState([]);
-  const [distanceUnit, setDistanceUnit] = useState("miles");
-  const [isAdmin, setIsAdmin] = useState(false);
+  const {
+    pigeons,
+    pigeonsLoading,
+    pigeonsError,
+    updatePigeon,
+    setPigeonParents,
+    deletePigeon,
+    uploadImage,
+    setProfileImage,
+    deleteImage,
+  } = usePigeons();
+  const { flights } = useFlights();
+  const { coopSettings } = useCoopSettings();
 
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState("");
+  const pigeon = useMemo(() => pigeons.find((p) => p.id === id) ?? null, [pigeons, id]);
+  const allPigeons = pigeons;
+  const distanceUnit = coopSettings?.distanceUnit ?? "miles";
+
+  const [isAdmin, setIsAdmin] = useState(false);
 
   // Editable form (mirrors the pigeon's editable fields)
   const [form, setForm] = useState(null);
@@ -130,61 +132,32 @@ export default function PigeonDetailPage({ params }) {
   const [imageError, setImageError] = useState("");
   const [lightboxImageId, setLightboxImageId] = useState(null);
 
-  // ── Load ──
+  const loading = pigeonsLoading;
+  const loadError = pigeonsError;
+
+  // Check admin status once on mount
   useEffect(() => {
-    let mounted = true;
+    getIsCoopAdmin().catch(() => false).then((v) => setIsAdmin(v ?? false));
+  }, []);
 
-    async function load() {
-      try {
-        setLoading(true);
-        setLoadError("");
-
-        const [loadedPigeons, loadedFlights, settings, adminStatus] =
-          await Promise.all([
-            fetchPigeonsWithParents(),
-            fetchFlightsWithPigeons().catch(() => []),
-            fetchCoopSettings().catch(() => null),
-            getIsCoopAdmin().catch(() => false),
-          ]);
-
-        if (!mounted) return;
-
-        const found = loadedPigeons.find((p) => p.id === id);
-        if (!found) {
-          setLoadError("Pigeon not found.");
-          return;
-        }
-
-        setPigeon(found);
-        setAllPigeons(loadedPigeons);
-        setFlights(loadedFlights);
-        setDistanceUnit(settings?.distanceUnit ?? "miles");
-        setIsAdmin(adminStatus);
-
-        // Seed form from loaded pigeon
-        setForm({
-          name: found.name ?? "",
-          birthday: found.birthday ?? "",
-          status: found.status ?? "home",
-          sex: found.sex ?? "unknown",
-          bandId: found.bandId ?? "",
-          bandColor: found.bandColor ?? "none",
-          notes: found.notes ?? "",
-          parentOneId: found.parentIds?.[0] ?? "",
-          parentTwoId: found.parentIds?.[1] ?? "",
-        });
-      } catch (err) {
-        if (mounted) setLoadError(err?.message ?? "Failed to load pigeon.");
-      } finally {
-        if (mounted) setLoading(false);
-      }
+  // Seed form when pigeon first becomes available
+  const formSeeded = useRef(false);
+  useEffect(() => {
+    if (pigeon && !formSeeded.current) {
+      formSeeded.current = true;
+      setForm({
+        name: pigeon.name ?? "",
+        birthday: pigeon.birthday ?? "",
+        status: pigeon.status ?? "home",
+        sex: pigeon.sex ?? "unknown",
+        bandId: pigeon.bandId ?? "",
+        bandColor: pigeon.bandColor ?? "none",
+        notes: pigeon.notes ?? "",
+        parentOneId: pigeon.parentIds?.[0] ?? "",
+        parentTwoId: pigeon.parentIds?.[1] ?? "",
+      });
     }
-
-    load();
-    return () => {
-      mounted = false;
-    };
-  }, [id]);
+  }, [pigeon]);
 
   useEffect(() => {
     function onKey(e) {
@@ -248,7 +221,7 @@ export default function PigeonDetailPage({ params }) {
         throw new Error("Name is required.");
       }
 
-      await updatePigeonInDb(pigeon.id, {
+      await updatePigeon(pigeon.id, {
         name: form.name.trim(),
         birthday: form.birthday || null,
         status: form.status,
@@ -258,7 +231,6 @@ export default function PigeonDetailPage({ params }) {
         notes: form.notes,
       });
 
-      // Persist parents only if they changed
       const newParents = [form.parentOneId, form.parentTwoId].filter(Boolean);
       const oldParents = pigeon.parentIds ?? [];
       const sameParents =
@@ -266,20 +238,8 @@ export default function PigeonDetailPage({ params }) {
         newParents.every((pid) => oldParents.includes(pid));
 
       if (!sameParents) {
-        await setPigeonParentsInDb(pigeon.id, newParents);
+        await setPigeonParents(pigeon.id, newParents);
       }
-
-      setPigeon((prev) => ({
-        ...prev,
-        name: form.name.trim(),
-        birthday: form.birthday || null,
-        status: form.status,
-        sex: form.sex,
-        bandId: form.bandId.trim() || null,
-        bandColor: form.bandColor,
-        notes: form.notes,
-        parentIds: newParents,
-      }));
 
       setSaveMessage("Saved.");
       setTimeout(() => setSaveMessage(""), 2500);
@@ -292,14 +252,10 @@ export default function PigeonDetailPage({ params }) {
 
   async function handleDelete() {
     if (!isAdmin || !pigeon) return;
-    if (
-      !confirm(
-        `Permanently delete ${pigeon.name}? This cannot be undone.`,
-      )
-    )
+    if (!confirm(`Permanently delete ${pigeon.name}? This cannot be undone.`))
       return;
     try {
-      await deletePigeonInDb(pigeon.id);
+      await deletePigeon(pigeon.id);
       router.push("/catalog");
     } catch (err) {
       setSaveError(err?.message ?? "Failed to delete.");
@@ -341,35 +297,7 @@ export default function PigeonDetailPage({ params }) {
         console.error("[upload] compression error:", compressErr);
         throw new Error(`Compression failed: ${compressErr?.message ?? String(compressErr)}`);
       }
-      const row = await uploadPigeonImage(pigeon.id, compressed, makeProfile);
-
-      setPigeon((prev) => {
-        const nextImages = makeProfile
-          ? [
-              ...prev.images.map((img) => ({ ...img, is_profile: false })),
-              {
-                id: row.id,
-                url: row.url,
-                is_profile: true,
-                sort_order: row.sort_order,
-              },
-            ]
-          : [
-              ...prev.images,
-              {
-                id: row.id,
-                url: row.url,
-                is_profile: false,
-                sort_order: row.sort_order,
-              },
-            ];
-        const profileImg = nextImages.find((img) => img.is_profile);
-        return {
-          ...prev,
-          images: nextImages,
-          imageUrl: profileImg?.url ?? nextImages[0]?.url ?? null,
-        };
-      });
+      await uploadImage(pigeon.id, compressed, makeProfile);
     } catch (err) {
       console.error("[upload] failed:", err);
       setImageError(err?.message ?? "Upload failed.");
@@ -384,19 +312,7 @@ export default function PigeonDetailPage({ params }) {
     if (!pigeon) return;
     setImageError("");
     try {
-      await setPigeonProfileImage(imageId, pigeon.id);
-      setPigeon((prev) => {
-        const nextImages = prev.images.map((img) => ({
-          ...img,
-          is_profile: img.id === imageId,
-        }));
-        const profileImg = nextImages.find((img) => img.is_profile);
-        return {
-          ...prev,
-          images: nextImages,
-          imageUrl: profileImg?.url ?? prev.imageUrl,
-        };
-      });
+      await setProfileImage(imageId, pigeon.id);
     } catch (err) {
       setImageError(err?.message ?? "Failed to set profile image.");
     }
@@ -405,38 +321,8 @@ export default function PigeonDetailPage({ params }) {
   async function handleDeleteImage(imageId, imageUrl) {
     setImageError("");
     try {
-      const wasProfile =
-        (pigeon.images ?? []).find((img) => img.id === imageId)?.is_profile ??
-        false;
-      const remaining = (pigeon.images ?? []).filter(
-        (img) => img.id !== imageId,
-      );
-      const newProfileId =
-        wasProfile && remaining.length > 0 ? remaining[0].id : null;
-
-      await deletePigeonImage(imageId, imageUrl);
-      if (newProfileId) {
-        await setPigeonProfileImage(newProfileId, pigeon.id);
-      }
-
       setLightboxImageId(null);
-      setPigeon((prev) => {
-        const nextImages = (prev.images ?? []).filter(
-          (img) => img.id !== imageId,
-        );
-        const updatedImages = newProfileId
-          ? nextImages.map((img) => ({
-              ...img,
-              is_profile: img.id === newProfileId,
-            }))
-          : nextImages;
-        const profileImg = updatedImages.find((img) => img.is_profile);
-        return {
-          ...prev,
-          images: updatedImages,
-          imageUrl: profileImg?.url ?? updatedImages[0]?.url ?? null,
-        };
-      });
+      await deleteImage(imageId, imageUrl, pigeon.id);
     } catch (err) {
       setImageError(err?.message ?? "Failed to delete image.");
     }
@@ -455,14 +341,14 @@ export default function PigeonDetailPage({ params }) {
     );
   }
 
-  if (loadError || !pigeon || !form) {
+  if (!loading && (loadError || !pigeon || !form)) {
     return (
       <main className="relative min-h-screen bg-background">
         <TopNav />
         <div className="mx-auto max-w-5xl px-6 pt-32 pb-12">
           <Card>
             <CardContent className="p-8 text-center">
-              <p className="text-red-600">{loadError ?? "Pigeon not found."}</p>
+              <p className="text-red-600">{loadError || "Pigeon not found."}</p>
               <Link
                 href="/catalog"
                 className="mt-3 inline-block text-sm text-blue underline"

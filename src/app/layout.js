@@ -1,6 +1,8 @@
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import PwaInit from "@/components/PwaInit";
+import SyncStatusBanner from "@/components/SyncStatusBanner";
+import { AppDataProvider } from "@/lib/AppDataContext";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -63,7 +65,10 @@ export default function RootLayout({ children }) {
       </head>
       <body className="min-h-full flex flex-col">
         <PwaInit />
-        {children}
+        <AppDataProvider>
+          {children}
+          <SyncStatusBanner />
+        </AppDataProvider>
       </body>
     </html>
   );

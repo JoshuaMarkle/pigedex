@@ -6,8 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { PiBirdBold } from "react-icons/pi";
 import { RiResetLeftLine } from "react-icons/ri";
 
-import { fetchPigeonsWithParents, createPigeonInDb } from "@/lib/pigeonDb";
-import { fetchFlightsWithPigeons } from "@/lib/flightDb";
+import { usePigeons, useFlights } from "@/lib/AppDataContext";
 
 import TopNav from "@/components/TopNav";
 import NewPigeonDialog from "@/components/dialogs/NewPigeonDialog";
@@ -401,18 +400,15 @@ function CatalogContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  const [pigeons, setPigeons] = useState([]);
-  const [flights, setFlights] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState("");
+  const { pigeons, pigeonsLoading: loading, pigeonsError: loadError, createPigeon } = usePigeons();
+  const { flights } = useFlights();
 
   const [isAdmin, setIsAdmin] = useState(null);
   const [newPigeonOpen, setNewPigeonOpen] = useState(false);
 
   async function handleCreatePigeon(nextPigeon) {
     try {
-      const created = await createPigeonInDb(nextPigeon);
-      setPigeons((prev) => [...prev, created]);
+      await createPigeon(nextPigeon);
     } catch (err) {
       alert(err?.message ?? "Failed to create pigeon.");
     }
@@ -440,43 +436,6 @@ function CatalogContent() {
     const qs = params.toString();
     router.replace(qs ? `/catalog?${qs}` : "/catalog", { scroll: false });
   }, [search, statusFilter, sortBy, router]);
-
-  useEffect(() => {
-    let mounted = true;
-
-    async function load() {
-      try {
-        setLoading(true);
-        setLoadError("");
-
-        const [loadedPigeons, loadedFlights] = await Promise.all([
-          fetchPigeonsWithParents(),
-          fetchFlightsWithPigeons().catch(() => []),
-        ]);
-
-        if (mounted) {
-          setPigeons(loadedPigeons);
-          setFlights(loadedFlights);
-        }
-      } catch (error) {
-        console.error("load failed:", error);
-
-        if (mounted) {
-          setLoadError(error?.message || "Failed to load pigeons.");
-        }
-      } finally {
-        if (mounted) {
-          setLoading(false);
-        }
-      }
-    }
-
-    load();
-
-    return () => {
-      mounted = false;
-    };
-  }, []);
 
   const stats = useMemo(() => {
     const totalPigeons = pigeons.length;

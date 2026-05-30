@@ -53,19 +53,21 @@ export async function fetchPigeonsWithParents() {
 }
 
 export async function createPigeonInDb(pigeon) {
-  const { data, error } = await supabase
-    .from("pigeons")
-    .insert({
-      coop_id: COOP_ID,
-      name: pigeon.name,
-      birthday: pigeon.birthday || null,
-      status: pigeon.status || "home",
-      band_id: pigeon.bandId || null,
-      band_color: pigeon.bandColor || null,
-      sex: pigeon.sex || "unknown",
-      notes: pigeon.notes || "",
-      archived: false,
-    })
+  const row = {
+    coop_id: COOP_ID,
+    name: pigeon.name,
+    birthday: pigeon.birthday || null,
+    status: pigeon.status || "home",
+    band_id: pigeon.bandId || null,
+    band_color: pigeon.bandColor || null,
+    sex: pigeon.sex || "unknown",
+    notes: pigeon.notes || "",
+    archived: false,
+  };
+  // Accept a caller-supplied UUID so offline creates can preserve their local id
+  if (pigeon.id) row.id = pigeon.id;
+
+  const { data, error } = await supabase.from("pigeons").insert(row)
     .select()
     .single();
 
@@ -74,7 +76,7 @@ export async function createPigeonInDb(pigeon) {
   const parentIds = pigeon.parentIds || [];
 
   if (parentIds.length > 0) {
-    await setPigeonParentsInDb(data.id, parentIds);
+    await setPigeonParentsInDb(data.id, parentIds, pigeon.parentRelationships);
   }
 
   return {
@@ -118,7 +120,7 @@ export async function updatePigeonInDb(pigeonId, updates) {
   return data;
 }
 
-export async function setPigeonParentsInDb(childId, parentIds) {
+export async function setPigeonParentsInDb(childId, parentIds, relationships) {
   if (parentIds.length > 2) {
     throw new Error("A pigeon cannot have more than 2 parents.");
   }
@@ -133,11 +135,18 @@ export async function setPigeonParentsInDb(childId, parentIds) {
 
   if (parentIds.length === 0) return;
 
-  const rows = parentIds.map((parentId) => ({
-    coop_id: COOP_ID,
-    parent_id: parentId,
-    child_id: childId,
-  }));
+  const rows = relationships
+    ? relationships.map((r) => ({
+        id: r.id,
+        coop_id: COOP_ID,
+        parent_id: r.parentId,
+        child_id: childId,
+      }))
+    : parentIds.map((parentId) => ({
+        coop_id: COOP_ID,
+        parent_id: parentId,
+        child_id: childId,
+      }));
 
   const { error: insertError } = await supabase
     .from("pigeon_relationships")
