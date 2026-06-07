@@ -321,6 +321,7 @@ export default function FlightsPage() {
   const [activeFlight, setActiveFlight] = useState(null);
 
   const [flightDialogOpen, setFlightDialogOpen] = useState(false);
+  const [flightInitialLocation, setFlightInitialLocation] = useState(null);
   const [editFlightId, setEditFlightId] = useState(null);
 
   // Set initial active flight once flights load
@@ -387,16 +388,26 @@ export default function FlightsPage() {
     [flights, editFlightId],
   );
 
+  function handleNewFlightFromMap(loc) {
+    setFlightInitialLocation(loc);
+    setFlightDialogOpen(true);
+  }
+
   // Shared props for dialogs
   const dialogs = (
     <>
       <NewFlightDialog
         open={flightDialogOpen}
-        onOpenChange={setFlightDialogOpen}
+        onOpenChange={(open) => {
+          setFlightDialogOpen(open);
+          if (!open) setFlightInitialLocation(null);
+        }}
         homeLocation={homeLocation}
         distanceUnit={distanceUnit}
         pigeons={pigeons.filter((p) => p.status !== "lost")}
+        flights={flights}
         onCreate={handleCreateFlight}
+        initialReleaseLocation={flightInitialLocation}
       />
       <EditFlightDialog
         open={editFlightId !== null}
@@ -405,6 +416,7 @@ export default function FlightsPage() {
         }}
         flight={editFlight}
         pigeons={pigeons}
+        flights={flights}
         distanceUnit={distanceUnit}
         onSave={handleSaveFlight}
       />
@@ -478,6 +490,8 @@ export default function FlightsPage() {
                 flights={visibleFlights}
                 activeFlight={activeFlight}
                 distanceUnit={distanceUnit}
+                onNewFlight={isAdmin ? handleNewFlightFromMap : undefined}
+                onSetActiveFlight={setActiveFlight}
               />
             </div>
           )}
@@ -508,6 +522,7 @@ export default function FlightsPage() {
           flights={visibleFlights}
           activeFlight={activeFlight}
           distanceUnit={distanceUnit}
+          onNewFlight={isAdmin ? handleNewFlightFromMap : undefined}
         />
       </div>
 

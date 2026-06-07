@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   MapContainer,
   TileLayer,
@@ -9,8 +9,11 @@ import {
   Popup,
   Polyline,
   useMap,
+  useMapEvents,
 } from "react-leaflet";
+import { Button } from "@/components/ui/button";
 import L from "leaflet";
+import { Plus } from "lucide-react";
 import "leaflet/dist/leaflet.css";
 
 delete L.Icon.Default.prototype._getIconUrl;
@@ -34,6 +37,19 @@ function dotIcon(color, size = 14) {
 const homeIcon = dotIcon("#1e96eb", 16);
 const releaseIcon = dotIcon("#b1b1b7", 12);
 const activeReleaseIcon = dotIcon("#1e96eb", 14);
+const tempIcon = dotIcon("#f59e0b", 14);
+
+function haversineKm(lat1, lng1, lat2, lng2) {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * (Math.PI / 180);
+  const dLng = (lng2 - lng1) * (Math.PI / 180);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1 * (Math.PI / 180)) *
+      Math.cos(lat2 * (Math.PI / 180)) *
+      Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
 
 function AutoFit({ bounds }) {
   const map = useMap();
@@ -57,21 +73,130 @@ function AutoFit({ bounds }) {
   return null;
 }
 
+function MapClickHandler({
+  homePos,
+  distanceUnit,
+  onTempMarker,
+  onDeselectFlight,
+}) {
+  useMapEvents({
+    click(e) {
+      const { lat, lng } = e.latlng;
+      let distance = null;
+      if (homePos) {
+        const km = haversineKm(homePos[0], homePos[1], lat, lng);
+        distance = distanceUnit === "miles" ? km * 0.621371 : km;
+      }
+      onDeselectFlight?.();
+      onTempMarker({ lat, lng, distance });
+    },
+  });
+  return null;
+}
+
+// Listens at the map level for popupclose so we can clear the temp marker when
+// the user explicitly closes the popup (X button, Escape, or opening another popup).
+// We deliberately avoid the Popup-level `remove` event because react-leaflet fires
+// it during internal binding/reconciliation — not just on user-triggered close.
+function TempMarkerLayer({
+  tempMarker,
+  homePos,
+  distanceUnit,
+  onNewFlight,
+  onClear,
+}) {
+  const map = useMap();
+  const markerRef = useRef(null);
+  const popupRef = useRef(null);
+  // Wire up map-level popupclose so we know when the user dismisses the popup.
+  // onClear is stable (useCallback in parent) so this only runs once per map instance.
+  useEffect(() => {
+    function handlePopupClose(e) {
+      if (popupRef.current && e.popup === popupRef.current) {
+        onClear();
+      }
+    }
+    map.on("popupclose", handlePopupClose);
+    return () => map.off("popupclose", handlePopupClose);
+  }, [map, onClear]);
+
+  // Open the popup after tempMarker changes. Deferred one rAF so Leaflet's own
+  // click-close logic (closePopupOnClick) runs before we re-open.
+  useEffect(() => {
+    if (!tempMarker || !markerRef.current) return;
+    const id = requestAnimationFrame(() => {
+      markerRef.current?.openPopup();
+    });
+    return () => cancelAnimationFrame(id);
+  }, [tempMarker]);
+
+  if (!tempMarker) return null;
+
+  return (
+    <>
+      {homePos && (
+        <Polyline
+          positions={[[tempMarker.lat, tempMarker.lng], homePos]}
+          color="#f59e0b"
+          weight={3}
+          opacity={0.85}
+        />
+      )}
+      <Marker
+        ref={markerRef}
+        position={[tempMarker.lat, tempMarker.lng]}
+        icon={tempIcon}
+        zIndexOffset={2000}
+      >
+        <Popup ref={popupRef}>
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-muted-foreground whitespace-nowrap">
+              {tempMarker.distance != null
+                ? `${Math.round(tempMarker.distance)} ${distanceUnit}`
+                : "No home location set"}
+            </span>
+            {onNewFlight && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() =>
+                  onNewFlight({ lat: tempMarker.lat, lng: tempMarker.lng })
+                }
+                title="Log a flight here"
+              >
+                <Plus className="size-3.5" />
+              </Button>
+            )}
+          </div>
+        </Popup>
+      </Marker>
+    </>
+  );
+}
+
 /**
  * FlightMap — overview display map.
  *
  * Props:
- *   homeLocation   – { lat, lng, name } | null
- *   flights        – array of { id, locationName, releaseLat, releaseLng, status, distance }
- *   activeFlight   – flight id to highlight (optional)
- *   distanceUnit   – "miles" | "km"
+ *   homeLocation      – { lat, lng, name } | null
+ *   flights           – array of { id, locationName, releaseLat, releaseLng, status, distance }
+ *   activeFlight      – flight id to highlight (optional)
+ *   distanceUnit      – "miles" | "km"
+ *   onNewFlight       – ({ lat, lng }) => void — if provided, enables tap-to-create
+ *   onSetActiveFlight – (id | null) => void — called when a marker is clicked or map is tapped
  */
 export default function FlightMap({
   homeLocation,
   flights = [],
   activeFlight = null,
   distanceUnit = "miles",
+  onNewFlight,
+  onSetActiveFlight,
 }) {
+  const [tempMarker, setTempMarker] = useState(null);
+  const clearTempMarker = useCallback(() => setTempMarker(null), []);
+
   const center = homeLocation
     ? [homeLocation.lat, homeLocation.lng]
     : [39.5, -98.35];
@@ -105,6 +230,12 @@ export default function FlightMap({
       <ZoomControl position="bottomright" />
 
       <AutoFit bounds={activeBounds} />
+      <MapClickHandler
+        homePos={homePos}
+        distanceUnit={distanceUnit}
+        onTempMarker={setTempMarker}
+        onDeselectFlight={() => onSetActiveFlight?.(null)}
+      />
 
       {/* Lines from each release to home */}
       {homePos &&
@@ -137,6 +268,12 @@ export default function FlightMap({
             position={[f.releaseLat, f.releaseLng]}
             icon={icon}
             zIndexOffset={isActive ? 1000 : 0}
+            eventHandlers={{
+              click: () => {
+                clearTempMarker();
+                onSetActiveFlight?.(f.id);
+              },
+            }}
           >
             <Popup>
               <div className="text-sm">
@@ -162,6 +299,15 @@ export default function FlightMap({
           </Popup>
         </Marker>
       )}
+
+      {/* Temporary marker for tap-to-create */}
+      <TempMarkerLayer
+        tempMarker={tempMarker}
+        homePos={homePos}
+        distanceUnit={distanceUnit}
+        onNewFlight={onNewFlight}
+        onClear={clearTempMarker}
+      />
     </MapContainer>
   );
 }

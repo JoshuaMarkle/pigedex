@@ -34,7 +34,7 @@ function dotIcon(color, opacity = 1) {
 }
 
 const homeIcon = dotIcon("#1e96eb");
-const releaseIcon = dotIcon("#eb5539");
+const releaseIcon = dotIcon("#1e96eb");
 const previewIcon = dotIcon("#f59e0b", 0.7); // amber, semi-transparent
 
 // Fly to view markers when they change

@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { X, Plus } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { X, Plus, CircleHelp, Home, MapPinXInside } from "lucide-react";
 
 import {
   parseDurationToSeconds,
@@ -14,6 +15,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import {
   Select,
   SelectContent,
@@ -30,6 +36,14 @@ import {
 } from "@/components/ui/dialog";
 import { Separator } from "@/components/ui/separator";
 
+// ── Status icon helper ────────────────────────────────────────────────────────
+
+function StatusIcon({ result, className = "h-4 w-4" }) {
+  if (result === "returned") return <Home className={`${className} text-green-600`} />;
+  if (result === "lost") return <MapPinXInside className={`${className} text-red-500`} />;
+  return <CircleHelp className={`${className} text-muted-foreground`} />;
+}
+
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function EditFlightDialog({
@@ -37,6 +51,7 @@ export default function EditFlightDialog({
   onOpenChange,
   flight, // { id, flightDate, status, locationName, notes, pigeons: [{id, pigeonId, result, returnedAt}] }
   pigeons, // full pigeon objects (for name lookup)
+  flights, // all flights — used to sort the add-pigeon dropdown by most recent flight
   distanceUnit,
   onSave, // async (flightId, flightUpdates, pigeonUpdates, { addPigeonIds, removePigeonIds }) => void
 }) {
@@ -55,6 +70,11 @@ export default function EditFlightDialog({
   const [autoCompleted, setAutoCompleted] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
+
+  // Mobile time-entry popup state
+  const [mobileTimeEdit, setMobileTimeEdit] = useState(null); // rowId | null
+  const [mobileTimeDraft, setMobileTimeDraft] = useState("");
+  const mobileTimeRowIdRef = useRef(null);
 
   const allowAutoComplete = useRef(false);
 
@@ -144,6 +164,34 @@ export default function EditFlightDialog({
     setAutoCompleted(false);
   }
 
+  // ── Mobile time popup ──
+  function openMobileTime(row) {
+    mobileTimeRowIdRef.current = row.id;
+    setMobileTimeEdit(row.id);
+    setMobileTimeDraft(row.durationStr);
+  }
+
+  function applyMobileTimeDraft(rowId, draft) {
+    const trimmed = draft.trim();
+    if (!trimmed || parseDurationToSeconds(trimmed) !== null) {
+      updatePigeonRow(rowId, "durationStr", draft);
+    }
+  }
+
+  function handleDoneMobileTime() {
+    applyMobileTimeDraft(mobileTimeRowIdRef.current, mobileTimeDraft);
+    mobileTimeRowIdRef.current = null;
+    setMobileTimeEdit(null);
+  }
+
+  function handleMobileTimeOpenChange(open) {
+    if (!open && mobileTimeRowIdRef.current !== null) {
+      applyMobileTimeDraft(mobileTimeRowIdRef.current, mobileTimeDraft);
+      mobileTimeRowIdRef.current = null;
+      setMobileTimeEdit(null);
+    }
+  }
+
   // ── Save ──
   async function handleSave(e) {
     e.preventDefault();
@@ -190,6 +238,30 @@ export default function EditFlightDialog({
     }
   }
 
+  // Real-time duration validation
+  const invalidRowIds = useMemo(() => {
+    const ids = new Set();
+    for (const row of pigeonRows) {
+      if (removedIds.includes(row.id)) continue;
+      if (row.result === "unknown") continue;
+      const trimmed = row.durationStr.trim();
+      if (trimmed && parseDurationToSeconds(trimmed) === null) ids.add(row.id);
+    }
+    return ids;
+  }, [pigeonRows, removedIds]);
+
+  // Latest flight date per pigeon (for sorting the add-pigeon dropdown)
+  const latestFlightDate = useMemo(() => {
+    const map = {};
+    for (const f of flights ?? []) {
+      for (const fp of f.pigeons ?? []) {
+        if (!map[fp.pigeonId] || f.flightDate > map[fp.pigeonId])
+          map[fp.pigeonId] = f.flightDate;
+      }
+    }
+    return map;
+  }, [flights]);
+
   if (!flight) return null;
 
   const resultClass = (result) => {
@@ -206,16 +278,33 @@ export default function EditFlightDialog({
     ...addedPigeonIds,
   ]);
 
-  // Pigeons available to add
-  const availableToAdd = (pigeons ?? []).filter(
-    (p) => !activePigeonIds.has(p.id),
-  );
+  // Pigeons available to add — exclude lost birds and those already on flight,
+  // then sort by most recent flight date (most recently flown first)
+  const availableToAdd = (pigeons ?? [])
+    .filter((p) => !activePigeonIds.has(p.id) && p.status !== "lost")
+    .sort((a, b) => {
+      const dateA = latestFlightDate[a.id] ?? null;
+      const dateB = latestFlightDate[b.id] ?? null;
+      if (dateA !== dateB) {
+        if (!dateA) return 1;
+        if (!dateB) return -1;
+        return dateB.localeCompare(dateA);
+      }
+      return (a.name ?? "").localeCompare(b.name ?? "");
+    });
 
   const activeRowCount =
     pigeonRows.filter((r) => !removedIds.includes(r.id)).length +
     addedPigeonIds.length;
 
+  const mobileTimeRow = mobileTimeEdit ? pigeonRows.find((r) => r.id === mobileTimeEdit) : null;
+  const mobileTimePig = mobileTimeRow ? pigeons?.find((p) => p.id === mobileTimeRow.pigeonId) : null;
+  const draftInvalid =
+    mobileTimeDraft.trim() !== "" &&
+    parseDurationToSeconds(mobileTimeDraft.trim()) === null;
+
   return (
+    <>
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[540px] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
@@ -283,36 +372,82 @@ export default function EditFlightDialog({
                         key={row.id}
                         className="flex items-center gap-2 px-3 py-2"
                       >
+                        {/* Name — fixed width on desktop, flexible on mobile */}
                         <span
-                          className={`w-24 shrink-0 truncate text-sm font-medium ${resultClass(row.result)}`}
+                          className={`flex-1 sm:flex-none sm:w-24 min-w-0 shrink-0 truncate text-sm font-medium ${resultClass(row.result)}`}
                         >
                           {pig?.name ?? "Unknown"}
                         </span>
-                        <Select
-                          value={row.result}
-                          onValueChange={(v) =>
-                            updatePigeonRow(row.id, "result", v)
-                          }
+
+                        {/* MOBILE: icon button that opens a status popover */}
+                        <div className="sm:hidden shrink-0">
+                          <Popover>
+                            <PopoverTrigger
+                              type="button"
+                              className="flex h-8 w-8 items-center justify-center rounded-md border border-input bg-background hover:bg-muted transition-colors"
+                              title="Change status"
+                            >
+                              <StatusIcon result={row.result} />
+                            </PopoverTrigger>
+                            <PopoverContent className="w-auto p-1" align="start">
+                              <div className="flex flex-col gap-0.5">
+                                {["unknown", "returned", "lost"].map((opt) => (
+                                  <button
+                                    key={opt}
+                                    type="button"
+                                    onClick={() => updatePigeonRow(row.id, "result", opt)}
+                                    className={`flex items-center gap-2 rounded px-3 py-1.5 text-sm hover:bg-muted text-left capitalize ${row.result === opt ? "bg-muted font-medium" : ""}`}
+                                  >
+                                    <StatusIcon result={opt} />
+                                    {opt}
+                                  </button>
+                                ))}
+                              </div>
+                            </PopoverContent>
+                          </Popover>
+                        </div>
+
+                        {/* DESKTOP: Select dropdown */}
+                        <div className="hidden sm:block shrink-0">
+                          <Select
+                            value={row.result}
+                            onValueChange={(v) => updatePigeonRow(row.id, "result", v)}
+                          >
+                            <SelectTrigger className="h-8 w-28 text-xs">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="unknown">Unknown</SelectItem>
+                              <SelectItem value="returned">Returned</SelectItem>
+                              <SelectItem value="lost">Lost</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        {/* MOBILE: duration button that opens the centered time popup */}
+                        <button
+                          type="button"
+                          className={`sm:hidden shrink-0 h-8 w-20 rounded-md border px-2 text-left text-xs font-mono transition-colors
+                            ${row.result === "unknown" ? "cursor-not-allowed border-input bg-muted opacity-50" : "border-input bg-background hover:bg-muted"}
+                            ${invalidRowIds.has(row.id) ? "border-red-500" : ""}
+                          `}
+                          disabled={row.result === "unknown"}
+                          onClick={() => openMobileTime(row)}
+                          title="Edit flight time"
                         >
-                          <SelectTrigger className="h-8 w-28 shrink-0 text-xs">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="unknown">Unknown</SelectItem>
-                            <SelectItem value="returned">Returned</SelectItem>
-                            <SelectItem value="lost">Lost</SelectItem>
-                          </SelectContent>
-                        </Select>
+                          {row.durationStr || <span className="text-muted-foreground">—</span>}
+                        </button>
+
+                        {/* DESKTOP: inline Input */}
                         <Input
-                          className="h-8 min-w-0 flex-1 font-mono text-xs"
+                          className={`hidden sm:block h-8 min-w-0 flex-1 font-mono text-xs ${invalidRowIds.has(row.id) ? "border-red-500 focus-visible:ring-red-500" : ""}`}
                           value={row.durationStr}
-                          onChange={(e) =>
-                            updatePigeonRow(row.id, "durationStr", e.target.value)
-                          }
+                          onChange={(e) => updatePigeonRow(row.id, "durationStr", e.target.value)}
                           placeholder="1h 30m"
                           title="Flight time — format: 1d 2h 30m 15s"
                           disabled={row.result === "unknown"}
                         />
+
                         <button
                           type="button"
                           onClick={() => handleRemoveExisting(row.id)}
@@ -358,10 +493,17 @@ export default function EditFlightDialog({
               </p>
             )}
 
-            <p className="text-xs text-muted-foreground">
-              Flight time format:{" "}
-              <span className="font-mono">1d 2h 30m 15s</span>
-            </p>
+            {invalidRowIds.size > 0 ? (
+              <p className="text-xs text-red-600">
+                Invalid flight time — use format:{" "}
+                <span className="font-mono">1d 2h 30m 15s</span>
+              </p>
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                Flight time format:{" "}
+                <span className="font-mono">1d 2h 30m 15s</span>
+              </p>
+            )}
 
             {/* Add pigeon */}
             {availableToAdd.length > 0 && (
@@ -423,12 +565,62 @@ export default function EditFlightDialog({
             >
               Cancel
             </Button>
-            <Button type="submit" disabled={saving}>
+            <Button type="submit" disabled={saving || invalidRowIds.size > 0}>
               {saving ? "Saving…" : "Save changes"}
             </Button>
           </div>
         </form>
       </DialogContent>
+
     </Dialog>
+
+    {/* Mobile flight-time entry — portal to body to avoid nested-dialog issues */}
+    {mobileTimeEdit !== null && typeof document !== "undefined" && createPortal(
+      <>
+        {/* Backdrop */}
+        <div
+          className="fixed inset-0 z-[200] bg-black/30"
+          onClick={() => {
+            applyMobileTimeDraft(mobileTimeRowIdRef.current, mobileTimeDraft);
+            mobileTimeRowIdRef.current = null;
+            setMobileTimeEdit(null);
+          }}
+        />
+        {/* Centered panel */}
+        <div className="fixed left-1/2 top-1/2 z-[201] w-[calc(100%-2rem)] max-w-[300px] -translate-x-1/2 -translate-y-1/2 rounded-xl bg-popover p-4 shadow-xl ring-2 ring-ring">
+          <div className="mb-3">
+            <p className="font-medium text-sm leading-tight">
+              {mobileTimePig?.name ?? "Flight"} — time
+            </p>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              Format: <span className="font-mono">1d 2h 30m 15s</span>
+            </p>
+          </div>
+          <Input
+            className={`font-mono ${draftInvalid ? "border-red-500 focus-visible:ring-red-500" : ""}`}
+            value={mobileTimeDraft}
+            onChange={(e) => setMobileTimeDraft(e.target.value)}
+            placeholder="e.g. 1h 30m"
+            autoFocus
+          />
+          {draftInvalid && (
+            <p className="mt-1 text-xs text-red-600">
+              Invalid — use <span className="font-mono">1d 2h 30m 15s</span>
+            </p>
+          )}
+          <div className="mt-3 flex justify-end">
+            <Button
+              type="button"
+              disabled={draftInvalid}
+              onClick={handleDoneMobileTime}
+            >
+              Done
+            </Button>
+          </div>
+        </div>
+      </>,
+      document.body,
+    )}
+    </>
   );
 }

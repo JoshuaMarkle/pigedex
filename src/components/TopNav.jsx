@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Plus } from "lucide-react";
+import { Plus, Home, Feather, LayoutGrid } from "lucide-react";
 import { IoSettingsOutline } from "react-icons/io5";
 import { IoPersonOutline } from "react-icons/io5";
 
@@ -15,9 +15,9 @@ import { supabase } from "@/lib/supabaseClient";
 import { useCoopSettings } from "@/lib/AppDataContext";
 
 const links = [
-  { href: "/", label: "Home" },
-  { href: "/flights", label: "Flights" },
-  { href: "/catalog", label: "Catalog" },
+  { href: "/", label: "Home", icon: Home },
+  { href: "/flights", label: "Flights", icon: Feather },
+  { href: "/catalog", label: "Catalog", icon: LayoutGrid },
 ];
 
 export default function TopNav({ onAdd, onAdminChange }) {
@@ -25,9 +25,19 @@ export default function TopNav({ onAdd, onAdminChange }) {
   const [isAdmin, setIsAdmin] = useState(null);
   const [showLogin, setShowLogin] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [isCompact, setIsCompact] = useState(false);
   const pendingAdd = useRef(false);
 
   const { coopSettings, updateCoopSettings } = useCoopSettings();
+
+  useEffect(() => {
+    function checkWidth() {
+      setIsCompact(window.innerWidth < 500);
+    }
+    checkWidth();
+    window.addEventListener("resize", checkWidth);
+    return () => window.removeEventListener("resize", checkWidth);
+  }, []);
 
   useEffect(() => {
     let mounted = true;
@@ -118,24 +128,36 @@ export default function TopNav({ onAdd, onAdminChange }) {
         {/* Center pill */}
         <div className="absolute left-1/2 -translate-x-1/2 rounded-lg ring-2 ring-ring border-b-4 bg-white/90 px-2 py-2 shadow-md backdrop-blur transition-all hover:scale-102">
           <div className="flex items-center gap-1">
-            {links.map((link) =>
-              isActive(link.href) ? (
+            {links.map((link) => {
+              const Icon = link.icon;
+              const content = isCompact ? (
+                <Icon className="size-5" />
+              ) : (
+                link.label
+              );
+              const activeClass =
+                "rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground";
+              const inactiveClass =
+                "rounded-md px-4 py-2 text-sm font-medium text-muted-foreground hover:bg-muted hover:text-foreground";
+              return isActive(link.href) ? (
                 <span
                   key={link.href}
-                  className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground"
+                  className={activeClass}
+                  title={link.label}
                 >
-                  {link.label}
+                  {content}
                 </span>
               ) : (
                 <Link
                   key={link.href}
                   href={link.href}
-                  className="rounded-md px-4 py-2 text-sm font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
+                  className={inactiveClass}
+                  title={link.label}
                 >
-                  {link.label}
+                  {content}
                 </Link>
-              ),
-            )}
+              );
+            })}
           </div>
         </div>
 
@@ -143,7 +165,7 @@ export default function TopNav({ onAdd, onAdminChange }) {
         <Button
           type="button"
           onClick={handleLeftButton}
-          className="absolute right-1/2 mr-34 h-[56px] w-[56px] rounded-lg border-0 border-b-4 border-dot bg-white p-0 ring-2 ring-ring shadow-md backdrop-blur hover:scale-105 text-muted-foreground hover:text-primary"
+          className={`absolute right-1/2 ${isCompact ? "mr-24" : "mr-34"} h-[56px] w-[56px] rounded-lg border-0 border-b-4 border-dot bg-white p-0 ring-2 ring-ring shadow-md backdrop-blur hover:scale-105 text-muted-foreground hover:text-primary`}
           aria-label={isAdmin ? "Settings" : "Sign in"}
           title={isAdmin ? "Settings" : "Sign in"}
         >
@@ -159,7 +181,7 @@ export default function TopNav({ onAdd, onAdminChange }) {
           <Button
             type="button"
             onClick={handleAddClick}
-            className="absolute left-1/2 ml-34 h-[56px] w-[56px] rounded-lg border-0 border-b-4 border-dot bg-white p-0 text-muted-foreground ring-2 ring-ring shadow-md backdrop-blur hover:scale-105 hover:text-primary"
+            className={`absolute left-1/2 ${isCompact ? "ml-24" : "ml-34"} h-[56px] w-[56px] rounded-lg border-0 border-b-4 border-dot bg-white p-0 text-muted-foreground ring-2 ring-ring shadow-md backdrop-blur hover:scale-105 hover:text-primary`}
             aria-label="Add"
           >
             <Plus className="size-5" />

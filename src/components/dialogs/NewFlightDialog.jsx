@@ -61,8 +61,10 @@ export default function NewFlightDialog({
   onOpenChange,
   homeLocation, // { lat, lng, name } | null  — from coop_settings
   distanceUnit, // "miles" | "km"
-  pigeons, // array of pigeon objects for the selector
+  pigeons, // array of pigeon objects for the selector (already filtered: no lost birds)
+  flights, // all flights — used to sort pigeons by most recent flight
   onCreate, // (flight) => void
+  initialReleaseLocation, // { lat, lng } | null — pre-fill from map tap
 }) {
   const [form, setForm] = useState(defaultForm);
   const [releaseLocation, setReleaseLocation] = useState(null); // { lat, lng }
@@ -171,8 +173,34 @@ export default function NewFlightDialog({
   }
 
   useEffect(() => {
-    if (!open) reset();
-  }, [open]);
+    if (!open) {
+      reset();
+    } else if (initialReleaseLocation) {
+      setReleaseLocation({ lat: initialReleaseLocation.lat, lng: initialReleaseLocation.lng });
+    }
+  }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Sort pigeons by most recent flight date (most recently flown first)
+  const sortedPigeons = useMemo(() => {
+    if (!pigeons) return [];
+    const latestFlightDate = {};
+    for (const f of flights ?? []) {
+      for (const fp of f.pigeons ?? []) {
+        if (!latestFlightDate[fp.pigeonId] || f.flightDate > latestFlightDate[fp.pigeonId])
+          latestFlightDate[fp.pigeonId] = f.flightDate;
+      }
+    }
+    return [...pigeons].sort((a, b) => {
+      const dateA = latestFlightDate[a.id] ?? null;
+      const dateB = latestFlightDate[b.id] ?? null;
+      if (dateA !== dateB) {
+        if (!dateA) return 1;
+        if (!dateB) return -1;
+        return dateB.localeCompare(dateA);
+      }
+      return (a.name ?? "").localeCompare(b.name ?? "");
+    });
+  }, [pigeons, flights]);
 
   // Auto-calculate distance when both points are set
   const distance = useMemo(() => {
@@ -421,11 +449,11 @@ export default function NewFlightDialog({
           <Separator />
 
           {/* Pigeons selector */}
-          {pigeons && pigeons.length > 0 && (
+          {sortedPigeons.length > 0 && (
             <div className="space-y-2">
               <Label>Pigeons on this flight</Label>
               <div className="max-h-40 overflow-y-auto rounded-md border p-2 space-y-1">
-                {pigeons.map((pigeon) => {
+                {sortedPigeons.map((pigeon) => {
                   const checked = form.pigeonIds.includes(pigeon.id);
                   return (
                     <label

@@ -98,7 +98,7 @@
   --color-purple: #7a61f9;
   --color-dot: #e0e1e3;
   /* --color-ring: #c0c1c3; */
-  --color-ring: #b1b1b7;
+  --color-ring: var(--color-muted-foreground);
   --color-edge: #b1b1b7;
 }
 
@@ -150,4 +150,9 @@ body {
   html {
     @apply font-sans;
   }
+}
+
+/* Tighter padding on Leaflet map popups */
+.leaflet-popup-content {
+  margin: 8px 10px;
 }

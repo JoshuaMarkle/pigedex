@@ -288,7 +288,7 @@ function CatalogCard({ pigeon }) {
 
   return (
     <Link href={`/pigeons/${pigeon.id}`} className="block">
-      <Card className="h-full border-b-4 transition-transform hover:-translate-y-1 hover:shadow-md">
+      <Card className="h-full hover:-translate-y-1 transition-all">
         <CardHeader className="flex flex-row items-start gap-4 space-y-0">
           <Avatar className="h-14 w-14">
             <AvatarImage src={pigeon.imageUrl || ""} />
@@ -308,20 +308,25 @@ function CatalogCard({ pigeon }) {
             </span>
           </div>
 
-          {/* Band ID with color swatch */}
-          <div className="flex items-center gap-1.5 shrink-0 text-xs text-muted-foreground">
-            {bandHex && (
-              <span
-                className="h-3 w-3 rounded-full border border-black/10 shrink-0"
-                style={{ backgroundColor: bandHex }}
-              />
-            )}
-            <span>{pigeon.bandId || "Unbanded"}</span>
+          {/* Band ID with color swatch, age on mobile */}
+          <div className="flex flex-col items-end shrink-0 text-xs text-muted-foreground">
+            <div className="flex items-center gap-1.5">
+              {bandHex && (
+                <span
+                  className="h-3 w-3 rounded-full border border-black/10 shrink-0"
+                  style={{ backgroundColor: bandHex }}
+                />
+              )}
+              <span>{pigeon.bandId || "Unbanded"}</span>
+            </div>
+            <span className="sm:hidden mt-0.5">
+              {getAgeLabel(pigeon.birthday)} old
+            </span>
           </div>
         </CardHeader>
 
         <CardContent className="space-y-3">
-          <div className="grid grid-cols-2 gap-3 text-sm">
+          <div className="hidden sm:grid grid-cols-2 gap-3 text-sm">
             <div>
               <p className="text-muted-foreground">Age</p>
               <p className="font-medium">{getAgeLabel(pigeon.birthday)}</p>
@@ -350,18 +355,16 @@ function CatalogCard({ pigeon }) {
 
 function StatCard({ label, value, detail }) {
   return (
-    <Card>
-      <CardContent className="px-5">
-        <p className="text-sm text-muted-foreground">{label}</p>
+    <div>
+      <p className="text-sm text-muted-foreground">{label}</p>
 
-        <div className="mt-1 flex items-baseline gap-2">
-          <p className="text-3xl font-bold">{value}</p>
-          {detail ? (
-            <p className="text-sm text-muted-foreground">{detail}</p>
-          ) : null}
-        </div>
-      </CardContent>
-    </Card>
+      <div className="mt-1 flex items-baseline gap-2">
+        <p className="text-3xl font-bold">{value}</p>
+        {detail ? (
+          <p className="text-sm text-muted-foreground">{detail}</p>
+        ) : null}
+      </div>
+    </div>
   );
 }
 
@@ -372,27 +375,25 @@ function BirthdayStatCard({ nextBirthday }) {
       .join(", ") || "No birthdays set";
 
   return (
-    <Card>
-      <CardContent className="flex h-full items-center justify-between gap-6 px-6">
-        <div className="min-w-[96px] shrink-0">
-          <p className="text-sm text-muted-foreground">Next birthday</p>
+    <div className="flex h-full items-center justify-between gap-6">
+      <div className="min-w-[96px] shrink-0">
+        <p className="text-sm text-muted-foreground">Next birthday</p>
 
-          <p className="mt-1 whitespace-nowrap text-3xl font-bold leading-tight">
-            {getNextBirthdayTitle(nextBirthday)}
-          </p>
-        </div>
+        <p className="mt-1 whitespace-nowrap text-3xl font-bold leading-tight">
+          {getNextBirthdayTitle(nextBirthday)}
+        </p>
+      </div>
 
-        <div className="min-w-0 flex-1 mt-auto text-sm text-muted-foreground">
-          <p className="line-clamp-2">{names}</p>
+      <div className="min-w-0 flex-1 mt-auto text-sm text-muted-foreground">
+        <p className="line-clamp-2">{names}</p>
 
-          <p className="mt-1 whitespace-nowrap">
-            {nextBirthday
-              ? `/ ${formatBirthdayLabel(nextBirthday.birthday)}`
-              : "Unknown"}
-          </p>
-        </div>
-      </CardContent>
-    </Card>
+        <p className="mt-1 whitespace-nowrap">
+          {nextBirthday
+            ? `/ ${formatBirthdayLabel(nextBirthday.birthday)}`
+            : "Unknown"}
+        </p>
+      </div>
+    </div>
   );
 }
 
@@ -400,7 +401,12 @@ function CatalogContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  const { pigeons, pigeonsLoading: loading, pigeonsError: loadError, createPigeon } = usePigeons();
+  const {
+    pigeons,
+    pigeonsLoading: loading,
+    pigeonsError: loadError,
+    createPigeon,
+  } = usePigeons();
   const { flights } = useFlights();
 
   const [isAdmin, setIsAdmin] = useState(null);
@@ -419,7 +425,7 @@ function CatalogContent() {
     searchParams.get("status") ?? "all",
   );
   const [sortBy, setSortBy] = useState(
-    searchParams.get("sort") ?? "birthday-newest",
+    searchParams.get("sort") ?? "recent-flights",
   );
 
   // Sync filter/search state back into URL so back-navigation restores it
@@ -432,7 +438,7 @@ function CatalogContent() {
     const params = new URLSearchParams();
     if (search) params.set("q", search);
     if (statusFilter !== "all") params.set("status", statusFilter);
-    if (sortBy !== "birthday-newest") params.set("sort", sortBy);
+    if (sortBy !== "recent-flights") params.set("sort", sortBy);
     const qs = params.toString();
     router.replace(qs ? `/catalog?${qs}` : "/catalog", { scroll: false });
   }, [search, statusFilter, sortBy, router]);
@@ -497,7 +503,7 @@ function CatalogContent() {
             See the whole family in one place
           </p>
         </header>
-        <section className="grid gap-4 sm:grid-cols-3">
+        <section className="grid sm:grid-cols-3 border-2 rounded-md p-6 space-x-4 space-y-6 sm:space-y-0 sm:divide-x-2">
           <StatCard
             label="Pigeons home"
             value={stats.pigeonsHome}
@@ -513,70 +519,68 @@ function CatalogContent() {
           <BirthdayStatCard nextBirthday={stats.nextBirthday} />
         </section>
 
-        <Card>
-          <CardContent className="grid gap-4 p-4 grid-cols-1 sm:grid-cols-[1fr_80px_180px_40px]">
+        <div className="grid gap-4 p-4 grid-cols-1 sm:grid-cols-[1fr_80px_180px_40px]">
+          <div className="space-y-2">
+            <Label htmlFor="catalog-search">Search</Label>
+            <Input
+              id="catalog-search"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search across birds..."
+            />
+          </div>
+          <div className="grid grid-cols-[1fr_1fr_40px] gap-4 sm:contents">
             <div className="space-y-2">
-              <Label htmlFor="catalog-search">Search</Label>
-              <Input
-                id="catalog-search"
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                placeholder="Search by name, band ID, birthday, notes..."
-              />
+              <Label>Status</Label>
+              <Select value={statusFilter} onValueChange={setStatusFilter}>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Filter status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All</SelectItem>
+                  <SelectItem value="home">Home</SelectItem>
+                  <SelectItem value="flying">Flying</SelectItem>
+                  <SelectItem value="lost">Lost</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
-            <div className="grid grid-cols-[1fr_1fr_40px] gap-4 sm:contents">
-              <div className="space-y-2">
-                <Label>Status</Label>
-                <Select value={statusFilter} onValueChange={setStatusFilter}>
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder="Filter status" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All</SelectItem>
-                    <SelectItem value="home">Home</SelectItem>
-                    <SelectItem value="flying">Flying</SelectItem>
-                    <SelectItem value="lost">Lost</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label>Sort</Label>
-                <Select value={sortBy} onValueChange={setSortBy}>
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder="Sort pigeons" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="birthday-newest">
-                      Birthday, newest first
-                    </SelectItem>
-                    <SelectItem value="birthday-oldest">
-                      Birthday, oldest first
-                    </SelectItem>
-                    <SelectItem value="name-az">Name, A to Z</SelectItem>
-                    <SelectItem value="name-za">Name, Z to A</SelectItem>
-                    <SelectItem value="status">Status</SelectItem>
-                    <SelectItem value="recent-flights">
-                      Most recent flights
-                    </SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label>Reset</Label>
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    setSearch("");
-                    setStatusFilter("all");
-                    setSortBy("birthday-newest");
-                  }}
-                >
-                  <RiResetLeftLine />
-                </Button>
-              </div>
+            <div className="space-y-2">
+              <Label>Sort</Label>
+              <Select value={sortBy} onValueChange={setSortBy}>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Sort pigeons" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="recent-flights">
+                    Most recent flights
+                  </SelectItem>
+                  <SelectItem value="birthday-newest">
+                    Birthday, newest first
+                  </SelectItem>
+                  <SelectItem value="birthday-oldest">
+                    Birthday, oldest first
+                  </SelectItem>
+                  <SelectItem value="name-az">Name, A to Z</SelectItem>
+                  <SelectItem value="name-za">Name, Z to A</SelectItem>
+                  <SelectItem value="status">Status</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
-          </CardContent>
-        </Card>
+            <div className="space-y-2">
+              <Label>Reset</Label>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setSearch("");
+                  setStatusFilter("all");
+                  setSortBy("recent-flights");
+                }}
+              >
+                <RiResetLeftLine />
+              </Button>
+            </div>
+          </div>
+        </div>
 
         {loading ? (
           <Card>
