@@ -3,6 +3,8 @@
   <h3>All in one solution for modern loft management</h3>
 </div>
 
+<img src="promo/promo-4-mobile.png" alt="Pigedex on mobile" />
+
 The [Pigedex](https://pigedex.joshuamarkle.com) is a progressive web app designed for pigeon coop management. It provides tools for tracking lineage, managing pigeon records, and logging flights through an interactive and visual interface.
 
 <br>
