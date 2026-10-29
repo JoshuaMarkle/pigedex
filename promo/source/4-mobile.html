@@ -1,0 +1,134 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<link rel="stylesheet" href="base.css" />
+<style>
+  body { background: var(--blue); }
+  .bgdots {
+    position: absolute; inset: 0;
+    background-image: radial-gradient(circle, rgb(255 255 255 / 0.22) 2px, transparent 2px);
+    background-size: 28px 28px;
+    -webkit-mask-image: radial-gradient(ellipse 80% 90% at 70% 50%, #000 30%, transparent 80%);
+  }
+  .glow { position: absolute; width: 1100px; height: 1100px; left: 1000px; top: -40px; border-radius: 999px;
+    background: radial-gradient(circle, rgb(255 255 255 / 0.28), transparent 65%); }
+
+  .left { position: absolute; left: 130px; top: 0; bottom: 0; width: 820px; display: flex; flex-direction: column; justify-content: center; gap: 40px; }
+  .title { font-size: 190px; --stroke: 28px; }
+  .headline { font-size: 52px; --stroke: 16px; }
+  .sub { font-size: 25px; font-weight: 500; color: rgb(255 255 255 / 0.9); line-height: 1.45; max-width: 600px; }
+  .chips { display: flex; gap: 14px; }
+  .chips span { background: rgb(255 255 255 / 0.16); color: #fff; border: 2px solid rgb(255 255 255 / 0.35); padding: 10px 20px; border-radius: 999px; font-size: 18px; font-weight: 500; }
+
+  .phone {
+    position: absolute; left: 1150px; top: 110px; width: 430px; height: 900px;
+    border-radius: 64px; background: #111; padding: 14px;
+    box-shadow: 0 50px 90px -20px rgb(0 0 0 / 0.5), inset 0 0 0 2px #333;
+    transform: rotate(4deg);
+  }
+  .screen { position: relative; width: 100%; height: 100%; border-radius: 52px; overflow: hidden; background: #fff; }
+  .screen .dots { position: absolute; inset: 0; background-size: 20px 20px; }
+  .island { position: absolute; top: 12px; left: 50%; width: 120px; height: 34px; margin-left: -60px; background: #111; border-radius: 999px; z-index: 5; }
+  .mnav { position: absolute; top: 62px; left: 0; width: 100%; display: flex; justify-content: center; gap: 10px; z-index: 4; }
+  .mnav .icon-btn { width: 52px; height: 52px; }
+  .mnav .icon-btn svg, .mnav .navpill svg { width: 20px; height: 20px; }
+  .mnav .navpill span { padding: 8px 14px; display: grid; place-items: center; }
+  .tree { position: absolute; left: 49px; top: 175px; transform: scale(0.78); transform-origin: 0 0; }
+  .banner { position: absolute; bottom: 26px; left: 50%; transform: translateX(-50%); border-radius: 999px; padding: 8px 16px;
+    font-size: 13px; font-weight: 500; background: rgb(251 191 36 / 0.9); color: #78350f; box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.15); white-space: nowrap; }
+
+  .popup {
+    position: absolute; left: 1470px; top: 560px; width: 330px; padding: 18px 0;
+    border-radius: 10px; box-shadow: 0 25px 50px -12px rgb(0 0 0 / 0.35); transform: rotate(-3deg); display: grid; gap: 16px;
+  }
+  .popup header { display: flex; justify-content: space-between; align-items: flex-start; padding: 0 18px; }
+  .popup h3 { font-size: 17px; font-weight: 500; }
+  .popup .band { margin-top: 4px; display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted-foreground); }
+  .popup .band .swatch { width: 10px; height: 10px; }
+  .btn { border: 1px solid var(--border); border-radius: 8px; padding: 4px 10px; font-size: 13px; font-weight: 500; box-shadow: 0 1px 2px rgb(0 0 0 / 0.05); }
+  .popup .btns { display: flex; gap: 6px; }
+  .popup .body { padding: 0 18px; display: grid; gap: 14px; }
+  .popup .two { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .popup .lab { font-size: 14px; font-weight: 500; margin-bottom: 6px; }
+  .popup .sel { height: 34px; border: 1px solid var(--border); border-radius: 8px; padding: 0 10px; display: flex; align-items: center; justify-content: space-between; font-size: 14px; }
+  .popup .sel svg { width: 14px; height: 14px; color: var(--muted-foreground); }
+  .popup .notes { font-size: 12px; color: var(--muted-foreground); }
+
+  .stat { position: absolute; left: 1010px; top: 190px; padding: 18px 22px; border-radius: 10px; transform: rotate(-5deg); box-shadow: 0 25px 50px -12px rgb(0 0 0 / 0.35); }
+  .stat .l { font-size: 14px; color: var(--muted-foreground); }
+  .stat .v { margin-top: 4px; font-size: 30px; font-weight: 700; display: flex; align-items: baseline; gap: 8px; }
+  .stat .v small { font-size: 14px; font-weight: 400; color: var(--muted-foreground); }
+</style>
+</head>
+<body>
+  <div class="glow"></div>
+  <div class="bgdots"></div>
+
+  <div class="left">
+    <div><h1 class="sticker title" data-text="Pigedex">Pigedex</h1></div>
+    <div><h2 class="sticker headline" data-text="Every pigeon, confidently&#10;managed all in one place."><span class="text-blue">Every pigeon,</span> confidently<br />managed all in one place.</h2></div>
+    <p class="sub">The all-in-one platform for modern loft management: family trees, flight logs and a full catalog, right in your pocket, even offline.</p>
+    <div class="chips"><span>Family tree</span><span>Flight tracking</span><span>Catalog</span><span>Offline-ready</span></div>
+  </div>
+
+  <div class="phone">
+    <div class="screen">
+      <div class="dots"></div>
+      <div class="island"></div>
+      <div class="mnav">
+        <div class="icon-btn" data-icon="person"></div>
+        <div class="navpill"><span class="on" data-icon="house"></span><span data-icon="feather"></span><span data-icon="grid"></span></div>
+        <div class="icon-btn" data-icon="plus"></div>
+      </div>
+      <div class="tree" id="tree"></div>
+      <div class="banner">2 unsynced changes</div>
+    </div>
+  </div>
+
+  <div class="card stat">
+    <p class="l">Next birthday</p>
+    <p class="v">3 days <small>Pebble</small></p>
+  </div>
+
+  <div class="card popup">
+    <header>
+      <div><h3>Pebble</h3><p class="band"><span class="swatch" style="background: #1e96eb"></span>US-2025-0021</p></div>
+      <div class="btns"><span class="btn">Edit</span><span class="btn">Close</span></div>
+    </header>
+    <div class="body">
+      <div class="two">
+        <div><p class="lab">Age</p><p>1 year 9 months</p></div>
+        <div><p class="lab">Status</p><div class="sel">Home <span data-icon="chevron"></span></div></div>
+      </div>
+      <div class="two">
+        <div><p class="lab">Parent 1</p><div class="sel">Speck <span data-icon="chevron"></span></div></div>
+        <div><p class="lab">Parent 2</p><div class="sel">Misty <span data-icon="chevron"></span></div></div>
+      </div>
+      <p class="notes">Small but bold. Birthday coming up!</p>
+    </div>
+  </div>
+
+  <script src="shared.js"></script>
+  <script>
+    const G = 185;
+    renderTree(document.getElementById("tree"), {
+      pigeons: [
+        { id: "blue", name: "Blue", bday: "03-12-2023", status: "home", x: 0, y: 0 },
+        { id: "ash", name: "Ash", bday: "2023", status: "home", x: 210, y: 0 },
+        { id: "speck", name: "Speck", bday: "02-10-2024", status: "home", x: 0, y: G },
+        { id: "misty", name: "Misty", bday: "03-21-2024", status: "home", x: 210, y: G },
+        { id: "pebble", name: "Pebble", bday: "01-14-2025", status: "home", x: 0, y: 2 * G, style: "transform: scale(1.04); box-shadow: 0 0 0 3px var(--green), 0 10px 20px -4px rgb(0 0 0 / 0.25);" },
+        { id: "nimbus", name: "Nimbus", bday: "01-14-2025", status: "flying", x: 210, y: 2 * G },
+        { id: "biscuit", name: "Biscuit", bday: "04-30-2026", status: "home", x: 105, y: 3 * G },
+      ],
+      unions: [
+        { id: "u1", x: 195, y: 115, parents: ["blue", "ash"], children: ["speck"] },
+        { id: "u2", x: 195, y: G + 115, parents: ["speck", "misty"], children: ["pebble", "nimbus"] },
+        { id: "u3", x: 195, y: 2 * G + 115, parents: ["pebble", "nimbus"], children: ["biscuit"] },
+      ],
+      highlight: ["blue", "ash", "speck", "misty", "pebble", "biscuit"],
+    });
+  </script>
+</body>
+</html>

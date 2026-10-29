@@ -1,0 +1,98 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<link rel="stylesheet" href="base.css" />
+<style>
+  .bg {
+    position: absolute;
+    inset: 0;
+    -webkit-mask-image: radial-gradient(ellipse 70% 80% at 66% 50%, #000 45%, transparent 85%);
+  }
+  .left {
+    position: absolute;
+    left: 140px;
+    top: 0;
+    bottom: 0;
+    width: 640px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 36px;
+  }
+  .title { font-size: 168px; --stroke: 24px; }
+  .headline { font-size: 52px; --stroke: 16px; transform: rotate(-1deg); }
+  .sub { font-size: 24px; font-weight: 500; color: var(--muted-foreground); line-height: 1.4; max-width: 520px; }
+  .legend { display: flex; gap: 12px; }
+  .legend div {
+    display: flex; align-items: center; gap: 10px;
+    background: #fff; padding: 10px 18px; border-radius: 999px;
+    border: 2px solid var(--border); font-size: 18px; font-weight: 500;
+  }
+  .legend i { width: 14px; height: 14px; border-radius: 999px; box-shadow: 0 0 0 3px var(--c); background: #fff; }
+  .tree {
+    position: absolute;
+    left: 820px;
+    top: 175px;
+    transform: scale(1.12);
+    transform-origin: 0 0;
+  }
+  .cursor {
+    position: absolute;
+    width: 30px;
+    filter: drop-shadow(0 2px 3px rgb(0 0 0 / 0.3));
+  }
+</style>
+</head>
+<body>
+  <div class="bg dots"></div>
+
+  <div class="left">
+    <div><h1 class="sticker title" data-text="Pigedex">Pigedex</h1></div>
+    <div>
+      <h2 class="sticker headline" data-text="Every pigeon's family,&#10;mapped out automatically."><span class="text-blue">Every pigeon's family,</span><br />mapped out automatically.</h2>
+    </div>
+    <p class="sub">Parents, siblings and offspring across generations, laid out as a living family tree.</p>
+    <div class="legend">
+      <div><i style="--c: var(--green)"></i>Home</div>
+      <div><i style="--c: var(--blue)"></i>Flying</div>
+      <div><i style="--c: var(--red)"></i>Lost</div>
+    </div>
+  </div>
+
+  <div class="tree" id="tree"></div>
+  <svg class="cursor" style="left: 1250px; top: 852px" viewBox="0 0 24 24"><path d="M4 2l16 10-7 1.5L9.5 21z" fill="#0a0a0a" stroke="#fff" stroke-width="1.5" stroke-linejoin="round"/></svg>
+
+  <script src="shared.js"></script>
+  <script>
+    const G = 190; // generation spacing
+    renderTree(document.getElementById("tree"), {
+      pigeons: [
+        { id: "blue", name: "Blue", bday: "03-12-2023", status: "home", x: 0, y: 0 },
+        { id: "ash", name: "Ash", bday: "2023", status: "home", x: 220, y: 0 },
+        { id: "cloud", name: "Cloud", bday: "04-15-2023", status: "lost", x: 500, y: 0 },
+        { id: "pearl", name: "Pearl", bday: null, status: "home", x: 720, y: 0 },
+
+        { id: "speck", name: "Speck", bday: "02-10-2024", status: "home", x: 0, y: G },
+        { id: "dot", name: "Dot", bday: "02-10-2024", status: "flying", x: 220, y: G },
+        { id: "misty", name: "Misty", bday: "03-21-2024", status: "home", x: 500, y: G },
+        { id: "juniper", name: "Juniper", bday: "03-21-2024", status: "flying", x: 720, y: G },
+
+        { id: "pebble", name: "Pebble", bday: "01-14-2025", status: "home", x: 140, y: 2 * G },
+        { id: "nimbus", name: "Nimbus", bday: "01-14-2025", status: "flying", x: 360, y: 2 * G },
+        { id: "sterling", name: "Sterling", bday: "06-02-2025", status: "home", x: 640, y: 2 * G },
+
+        { id: "biscuit", name: "Biscuit", bday: "04-30-2026", status: "home", x: 250, y: 3 * G },
+      ],
+      unions: [
+        { id: "u1", x: 200, y: 105, parents: ["blue", "ash"], children: ["speck", "dot"] },
+        { id: "u2", x: 700, y: 105, parents: ["cloud", "pearl"], children: ["misty", "juniper"] },
+        { id: "u3", x: 340, y: G + 105, parents: ["speck", "misty"], children: ["pebble", "nimbus"] },
+        { id: "u4", x: 820, y: G + 105, parents: ["juniper"], children: ["sterling"] },
+        { id: "u5", x: 340, y: 2 * G + 105, parents: ["pebble", "nimbus"], children: ["biscuit"] },
+      ],
+      highlight: ["blue", "ash", "speck", "cloud", "pearl", "misty", "pebble", "biscuit"],
+    });
+  </script>
+</body>
+</html>

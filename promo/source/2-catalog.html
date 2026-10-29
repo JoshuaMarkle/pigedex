@@ -1,0 +1,123 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<link rel="stylesheet" href="base.css" />
+<style>
+  body { background: #fafafa; }
+  .plane {
+    position: absolute;
+    left: 860px;
+    top: 150px;
+    width: 1500px;
+    transform: perspective(2600px) rotateX(22deg) rotateY(-12deg) rotateZ(-10deg) scale(0.82);
+    transform-origin: 0 0;
+  }
+  .toolbar { display: flex; gap: 16px; margin-bottom: 24px; }
+  .search {
+    flex: 1; height: 52px; display: flex; align-items: center; gap: 12px;
+    padding: 0 16px; background: #fff; border: 2px solid var(--border); border-radius: 8px;
+    font-size: 18px; color: var(--muted-foreground);
+  }
+  .search svg { width: 20px; height: 20px; }
+  .search b { color: var(--foreground); font-weight: 400; }
+  .search .caret { width: 2px; height: 24px; background: var(--foreground); margin-left: -10px; }
+  .select {
+    height: 52px; padding: 0 16px; display: flex; align-items: center; gap: 24px;
+    background: #fff; border: 2px solid var(--border); border-radius: 8px; font-size: 16px;
+  }
+  .select svg { width: 16px; height: 16px; color: var(--muted-foreground); }
+  .stats { display: grid; grid-template-columns: 1fr 1fr 1fr 1.5fr; gap: 24px; margin-bottom: 24px; }
+  .stats .card { padding: 20px 24px; }
+  .stats .label { font-size: 14px; color: var(--muted-foreground); }
+  .stats .value { margin-top: 4px; font-size: 30px; font-weight: 700; display: flex; align-items: baseline; gap: 8px; }
+  .stats .value small { font-size: 14px; font-weight: 400; color: var(--muted-foreground); }
+  .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 24px; }
+  .pc { padding: 16px 0; display: flex; flex-direction: column; gap: 16px; box-shadow: 0 1px 2px rgb(0 0 0 / 0.04); }
+  .pc.lift { transform: translateY(-14px); box-shadow: 0 24px 40px -12px rgb(0 0 0 / 0.25); border-color: var(--ring); }
+  .pc header { display: flex; align-items: flex-start; gap: 16px; padding: 0 16px; }
+  .pc .avatar { width: 56px; height: 56px; border: none; }
+  .pc .avatar svg { width: 24px; height: 24px; }
+  .pc .nm { flex: 1; min-width: 0; }
+  .pc .nm h3 { font-size: 18px; font-weight: 500; line-height: 1.3; }
+  .pc .nm .pill { margin-top: 4px; }
+  .pc .band { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted-foreground); }
+  .pc .facts { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 0 16px; }
+  .pc .facts p:first-child { color: var(--muted-foreground); }
+  .pc .facts p:last-child { font-weight: 500; }
+  .pc .notes { padding: 0 16px; color: var(--muted-foreground); line-height: 1.45;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+
+  .fade {
+    position: absolute; inset: 0;
+    background: linear-gradient(90deg, #fafafa 0%, #fafafa 34%, rgb(250 250 250 / 0.8) 40%, rgb(250 250 250 / 0) 50%);
+  }
+  .fade2 { position: absolute; inset: 0; background: linear-gradient(0deg, #fafafa 0%, rgb(250 250 250 / 0) 14%); }
+  .left {
+    position: absolute; left: 140px; top: 0; bottom: 0; width: 760px;
+    display: flex; flex-direction: column; justify-content: center; gap: 40px;
+  }
+  .title { font-size: 168px; --stroke: 24px; }
+  .headline { font-size: 52px; --stroke: 16px; }
+  .sub { font-size: 24px; font-weight: 500; color: var(--muted-foreground); line-height: 1.4; max-width: 560px; }
+</style>
+</head>
+<body>
+  <div class="plane">
+    <div class="toolbar">
+      <div class="search"><span data-icon="search"></span><b>Search by name, band or notes…</b></div>
+      <div class="select">Status: All <span data-icon="chevron"></span></div>
+      <div class="select">Sort: Recent flights <span data-icon="chevron"></span></div>
+    </div>
+    <div class="stats">
+      <div class="card"><p class="label">Total birds</p><p class="value">42</p></div>
+      <div class="card"><p class="label">Home</p><p class="value">36 <small>/ 42</small></p></div>
+      <div class="card"><p class="label">Flying</p><p class="value">5 <small>in the air</small></p></div>
+      <div class="card"><p class="label">Next birthday</p><p class="value">3 days <small>Pebble / January 14, 2026</small></p></div>
+    </div>
+    <div class="grid" id="grid"></div>
+  </div>
+  <div class="fade"></div>
+  <div class="fade2"></div>
+
+  <div class="left">
+    <div><h1 class="sticker title" data-text="Pigedex">Pigedex</h1></div>
+    <div><h2 class="sticker headline" data-text="Every bird in the loft,&#10;one search away."><span class="text-blue">Every bird in the loft,</span><br />one search away.</h2></div>
+    <p class="sub">Band IDs, birthdays, ages and notes in a catalog that searches, filters and sorts in a snap.</p>
+  </div>
+
+  <script src="shared.js"></script>
+  <script>
+    const BAND = { red: "#ef4444", blue: "#3b82f6", green: "#22c55e", yellow: "#eab308", white: "#f1f5f9", black: "#1e293b" };
+    const birds = [
+      ["Blue", "home", "US-2023-0412", "blue", "3 years 7 months", "March 12, 2023", "Founding cock of the loft. Calm, reliable homer with excellent orientation."],
+      ["Ash", "home", "US-2023-0418", "black", "3 years", "2023", "Dark checker hen. Great feeder, raised four clutches."],
+      ["Cloud", "lost", "US-2023-0533", "white", "3 years 6 months", "April 15, 2023", "Did not return from the 120 mi release in heavy wind."],
+      ["Pearl", "home", "Unbanded", null, "Unknown", "Unknown", "Rescued white hen, gentle and very tame."],
+      ["Speck", "home", "US-2024-0117", "red", "2 years 8 months", "February 10, 2024", "Speckled grizzle. Fastest of the 2024 round."],
+      ["Dot", "flying", "US-2024-0118", "red", "2 years 8 months", "February 10, 2024", "Out on the morning training toss."],
+      ["Misty", "home", "US-2024-0231", "green", "2 years 7 months", "March 21, 2024", "Blue bar hen, loves the top perch."],
+      ["Juniper", "flying", "US-2024-0232", "yellow", "2 years 7 months", "March 21, 2024", "Strong flier, consistently first back."],
+      ["Pebble", "home", "US-2025-0021", "blue", "1 year 9 months", "January 14, 2025", "Small but bold. Birthday coming up!"],
+      ["Nimbus", "flying", "US-2025-0022", "blue", "1 year 9 months", "January 14, 2025", "Paired with Sterling this season."],
+      ["Sterling", "home", "US-2025-0140", "white", "1 year 4 months", "June 2, 2025", "Silver dun cock, very curious."],
+      ["Biscuit", "home", "US-2026-0009", "yellow", "6 months", "April 30, 2026", "Youngest in the loft. First training tosses next month."],
+      ["Comet", "home", "US-2025-0187", "green", "1 year 1 month", "September 9, 2025", "Quick to trap, great on short tosses."],
+      ["Maple", "home", "US-2024-0302", "red", "2 years 5 months", "May 3, 2024", "Red checker hen, excellent mother."],
+      ["Orbit", "lost", "US-2025-0201", "black", "1 year", "October 2, 2025", "Lost during hawk season."],
+      ["Willow", "home", "US-2024-0350", "green", "2 years 4 months", "June 19, 2024", "Light grizzle with a gentle temperament."],
+    ];
+    const label = { home: "Home", flying: "Flying", lost: "Lost" };
+    document.getElementById("grid").innerHTML = birds.map(([name, st, band, color, age, bday, notes], i) => `
+      <div class="card pc ${i === 5 ? "lift" : ""}">
+        <header>
+          <div class="avatar">${ICONS.bird}</div>
+          <div class="nm"><h3>${name}</h3><span class="pill ${st}">${label[st]}</span></div>
+          <div class="band">${color ? `<span class="swatch" style="background:${BAND[color]}"></span>` : ""}${band}</div>
+        </header>
+        <div class="facts"><div><p>Age</p><p>${age}</p></div><div><p>Birthday</p><p>${bday}</p></div></div>
+        <p class="notes">${notes}</p>
+      </div>`).join("");
+  </script>
+</body>
+</html>

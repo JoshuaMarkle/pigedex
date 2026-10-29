@@ -1,0 +1,201 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<link rel="stylesheet" href="base.css" />
+<style>
+  #map { position: absolute; inset: 0; }
+  nav { position: absolute; top: 24px; left: 0; width: 100%; height: 64px; }
+  nav .navpill { position: absolute; left: 50%; transform: translateX(-50%); }
+  nav .icon-btn { position: absolute; top: 0; }
+  nav .icon-btn svg { width: 24px; height: 24px; }
+  aside {
+    position: absolute; left: 24px; top: 24px; bottom: 24px; width: 440px;
+    background: rgb(255 255 255 / 0.92); border-radius: 14px;
+    box-shadow: 0 0 0 2px var(--ring), 0 4px 6px -1px rgb(0 0 0 / 0.1);
+    overflow: hidden; display: flex; flex-direction: column;
+  }
+  aside .head { display: flex; align-items: center; justify-content: space-between; padding: 14px 20px; border-bottom: 1px solid var(--border); }
+  aside .head b { font-size: 16px; font-weight: 600; display: flex; align-items: center; gap: 10px; }
+  aside .head b svg { width: 18px; height: 18px; color: var(--muted-foreground); }
+  aside .head span { font-size: 14px; display: flex; align-items: center; gap: 6px; }
+  aside .head span svg { width: 14px; height: 14px; color: var(--muted-foreground); }
+  .row { border-bottom: 1px solid var(--border); }
+  .row .main { padding: 16px 20px; }
+  .row .top { display: flex; justify-content: space-between; gap: 8px; align-items: flex-start; }
+  .row .loc { display: flex; align-items: center; gap: 6px; font-size: 16px; font-weight: 600; }
+  .row .loc svg { width: 14px; height: 14px; color: #ef4444; }
+  .row .meta { margin-top: 3px; font-size: 13px; color: var(--muted-foreground); }
+  .row .ret { margin-top: 8px; font-size: 13px; color: var(--muted-foreground); }
+  .row.on { background: #eff6ff; }
+  .row .detail { border-top: 1px solid var(--border); background: rgb(239 246 255 / 0.6); padding: 10px 20px 14px; display: grid; gap: 6px; }
+  .row .detail div { display: flex; justify-content: space-between; font-size: 13px; }
+  .row .detail span:last-child { display: flex; gap: 10px; }
+  .row .detail .t { font-family: ui-monospace, monospace; color: var(--muted-foreground); }
+  .ok { color: #16a34a; } .bad { color: #ef4444; }
+
+  .label {
+    position: absolute; background: #fff; border-radius: 12px; padding: 8px 12px;
+    box-shadow: 0 3px 14px rgb(0 0 0 / 0.3); font-size: 15px; color: var(--muted-foreground);
+    transform: translate(-50%, -100%); white-space: nowrap;
+  }
+  .label b { color: var(--foreground); font-weight: 600; }
+  .label::after { content: ""; position: absolute; left: 50%; bottom: -8px; margin-left: -8px; border: 8px solid transparent; border-bottom: 0; border-top-color: #fff; }
+
+  .titlebox {
+    position: absolute; right: 110px; bottom: 90px; text-align: right;
+    display: flex; flex-direction: column; align-items: flex-end; gap: 26px;
+  }
+  .title { font-size: 168px; --stroke: 26px; }
+  .headline { font-size: 50px; --stroke: 16px; }
+</style>
+</head>
+<body>
+  <svg id="map" width="1920" height="1080"></svg>
+
+  <aside>
+    <div class="head"><b>Flights <span data-icon="plus"></span></b><span>All <span data-icon="chevron"></span></span></div>
+    <div class="row on">
+      <div class="main">
+        <div class="top"><div><p class="loc"><span data-icon="pin"></span>Ridgeview Overlook</p><p class="meta">Oct 26, 2026 · 112 mi</p></div><span class="pill completed">Completed</span></div>
+        <p class="ret">5/6 returned</p>
+      </div>
+      <div class="detail">
+        <div><span>Juniper</span><span><span class="t">2:39:55</span><span class="ok">returned</span></span></div>
+        <div><span>Blue</span><span><span class="t">2:41:08</span><span class="ok">returned</span></span></div>
+        <div><span>Dot</span><span><span class="t">2:52:13</span><span class="ok">returned</span></span></div>
+        <div><span>Speck</span><span><span class="t">3:05:40</span><span class="ok">returned</span></span></div>
+        <div><span>Nimbus</span><span><span class="t">3:11:02</span><span class="ok">returned</span></span></div>
+        <div><span>Cloud</span><span><span class="bad">lost</span></span></div>
+      </div>
+    </div>
+    <div class="row"><div class="main">
+      <div class="top"><div><p class="loc"><span data-icon="pin"></span>Cedar Hollow Toss</p><p class="meta">Nov 2, 2026 · 38 mi</p></div><span class="pill planned">Planned</span></div>
+    </div></div>
+    <div class="row"><div class="main">
+      <div class="top"><div><p class="loc"><span data-icon="pin"></span>County Fairgrounds</p><p class="meta">Oct 19, 2026 · 54 mi</p></div><span class="pill completed">Completed</span></div>
+      <p class="ret">6/6 returned</p>
+    </div></div>
+    <div class="row"><div class="main">
+      <div class="top"><div><p class="loc"><span data-icon="pin"></span>Mill Creek Station</p><p class="meta">Oct 12, 2026 · 71 mi</p></div><span class="pill completed">Completed</span></div>
+      <p class="ret">5/5 returned</p>
+    </div></div>
+    <div class="row"><div class="main">
+      <div class="top"><div><p class="loc"><span data-icon="pin"></span>Hilltop Field</p><p class="meta">Oct 5, 2026 · 12 mi</p></div><span class="pill completed">Completed</span></div>
+      <p class="ret">8/8 returned</p>
+    </div></div>
+    <div class="row"><div class="main">
+      <div class="top"><div><p class="loc"><span data-icon="pin"></span>Lakeside Park</p><p class="meta">Sep 28, 2026 · 26 mi</p></div><span class="pill completed">Completed</span></div>
+      <p class="ret">7/8 returned</p>
+    </div></div>
+    <div class="row"><div class="main">
+      <div class="top"><div><p class="loc"><span data-icon="pin"></span>Old Quarry Road</p><p class="meta">Sep 21, 2026 · 45 mi</p></div><span class="pill completed">Completed</span></div>
+      <p class="ret">6/6 returned</p>
+    </div></div>
+  </aside>
+
+  <nav>
+    <div class="icon-btn" style="right: calc(50% + 136px)" data-icon="person"></div>
+    <div class="navpill"><span>Home</span><span class="on">Flights</span><span>Catalog</span></div>
+    <div class="icon-btn" style="left: calc(50% + 136px)" data-icon="plus"></div>
+  </nav>
+
+  <div class="titlebox">
+    <h1 class="sticker title" data-text="Pigedex">Pigedex</h1>
+    <h2 class="sticker headline" data-text="Every release,&#10;tracked all the way home."><span class="text-blue">Every release,</span><br />tracked all the way home.</h2>
+  </div>
+
+  <script src="shared.js"></script>
+  <script>
+    // Stylized street map in the spirit of the OSM tiles used in the app
+    const svg = document.getElementById("map");
+    const NS = "http://www.w3.org/2000/svg";
+    let seed = 7;
+    const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+    const add = (tag, attrs, parent = svg) => {
+      const el = document.createElementNS(NS, tag);
+      for (const k in attrs) el.setAttribute(k, attrs[k]);
+      parent.appendChild(el);
+      return el;
+    };
+
+    add("rect", { width: 1920, height: 1080, fill: "#f2efe9" });
+
+    // parks & woods
+    const green = [
+      "M560,700 C640,640 760,660 800,740 C830,820 740,900 640,880 C560,860 520,770 560,700Z",
+      "M1380,70 C1500,40 1640,90 1660,170 C1670,240 1540,280 1440,250 C1360,220 1320,120 1380,70Z",
+      "M1240,420 C1290,400 1350,420 1350,470 C1350,520 1290,530 1250,510 C1220,490 1210,440 1240,420Z",
+      "M1700,600 C1800,560 1920,600 1920,700 L1920,820 C1840,840 1720,800 1690,720 C1670,670 1670,620 1700,600Z",
+      "M820,80 C900,60 960,120 940,180 C920,230 840,240 800,200 C770,160 770,100 820,80Z",
+    ];
+    green.forEach((d, i) => add("path", { d, fill: i % 2 ? "#add19e" : "#c8facc", opacity: 0.85 }));
+
+    // city blocks: slightly rotated street grid around home
+    const home = { x: 1010, y: 560 };
+    const city = add("g", { transform: `rotate(-12 ${home.x} ${home.y})`, opacity: 0.95 });
+    add("rect", { x: home.x - 260, y: home.y - 200, width: 520, height: 400, rx: 120, fill: "#e8e4dc" }, city);
+    for (let x = home.x - 260; x <= home.x + 260; x += 52)
+      add("line", { x1: x, y1: home.y - 200 + rnd() * 40, x2: x, y2: home.y + 200 - rnd() * 40, stroke: "#fff", "stroke-width": 4 }, city);
+    for (let y = home.y - 200; y <= home.y + 200; y += 48)
+      add("line", { x1: home.x - 260 + rnd() * 50, y1: y, x2: home.x + 260 - rnd() * 50, y2: y, stroke: "#fff", "stroke-width": 4 }, city);
+
+    // river + lake
+    const river = "M-20,330 C220,300 380,420 560,400 C760,380 820,250 1000,270 C1180,290 1260,380 1460,360 C1640,340 1760,250 1940,290";
+    add("path", { d: river, fill: "none", stroke: "#aad3df", "stroke-width": 26, "stroke-linecap": "round" });
+    add("path", { d: "M1480,860 C1560,820 1680,850 1680,920 C1680,990 1560,1010 1490,980 C1440,950 1430,890 1480,860Z", fill: "#aad3df" });
+
+    // roads: casing then fill
+    const roads = [
+      ["M-20,620 C300,640 600,560 1010,560 C1400,560 1600,480 1940,470", "#fcd6a4", 12],
+      ["M760,-20 C820,200 900,380 1010,560 C1100,720 1150,900 1180,1100", "#f9b29c", 13],
+      ["M1010,560 C1200,470 1420,440 1640,420 C1760,410 1860,380 1940,360", "#fcd6a4", 10],
+      ["M500,1100 C640,920 820,760 1010,560", "#f7fabf", 9],
+      ["M1010,560 C1250,640 1500,740 1940,800", "#f7fabf", 9],
+      ["M1100,-20 C1080,160 1060,360 1010,560", "#fff", 7],
+      ["M500,180 C700,240 880,180 1100,200 C1300,220 1500,120 1700,40", "#fff", 6],
+      ["M500,900 C700,960 900,980 1180,960 C1400,940 1600,1020 1940,980", "#fff", 6],
+    ];
+    roads.forEach(([d, , w]) => add("path", { d, fill: "none", stroke: "#cfc8bb", "stroke-width": w + 3, "stroke-linecap": "round" }));
+    roads.forEach(([d, c, w]) => add("path", { d, fill: "none", stroke: c, "stroke-width": w, "stroke-linecap": "round" }));
+
+    // flight lines + markers
+    const releases = [
+      { x: 1730, y: 205, active: true },
+      { x: 640, y: 210 },
+      { x: 1420, y: 640 },
+      { x: 700, y: 960 },
+      { x: 1250, y: 330 },
+    ];
+    releases.forEach((r) =>
+      add("line", { x1: home.x, y1: home.y, x2: r.x, y2: r.y, stroke: r.active ? "#1e96eb" : "#b1b1b7", "stroke-width": r.active ? 5 : 4, "stroke-dasharray": r.active ? "" : "14 14", opacity: r.active ? 1 : 0.9 })
+    );
+    const dot = (x, y, color, size) => {
+      add("circle", { cx: x, cy: y + 1.5, r: size / 2 + 4, fill: "rgb(0 0 0 / 0.25)", filter: "blur(2px)" });
+      add("circle", { cx: x, cy: y, r: size / 2, fill: color, stroke: "#fff", "stroke-width": 4 });
+    };
+    releases.forEach((r) => dot(r.x, r.y, r.active ? "#1e96eb" : "#b1b1b7", r.active ? 24 : 20));
+    dot(home.x, home.y, "#1e96eb", 28);
+
+    // flying birds along the active route
+    const birds = [0.36, 0.5, 0.62];
+    birds.forEach((t, i) => {
+      const x = home.x + (1730 - home.x) * t, y = home.y + (205 - home.y) * t;
+      const sc = 0.16 - i * 0.015;
+      const g = add("g", { transform: `translate(${x + 20},${y - 52 + i * 4}) scale(${-sc},${sc})` });
+      add("path", { d: ICONS.bird.match(/d="([^"]+)"/)[1], fill: "#0a0a0a" }, g);
+    });
+
+    const label = (x, y, html) => {
+      const el = document.createElement("div");
+      el.className = "label";
+      el.style.left = x + "px";
+      el.style.top = y + "px";
+      el.innerHTML = html;
+      document.body.insertBefore(el, document.querySelector(".titlebox"));
+    };
+    label(1730, 180, "<b>Ridgeview Overlook</b> · 112 mi");
+    label(home.x, home.y - 26, "<b>Home loft</b>");
+  </script>
+</body>
+</html>
